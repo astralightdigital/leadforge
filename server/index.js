@@ -175,7 +175,9 @@ async function foursquareSearch(query, city, state) {
     const response = await axios.get('https://places-api.foursquare.com/places/search', { headers, params });
     const results = response.data.results || [];
     allRaw = allRaw.concat(results);
-    cursor = response.data.cursor ?? null;
+    // cursor lives at top-level or inside context depending on API version
+    cursor = response.data.cursor ?? response.data.context?.cursor ?? null;
+    console.log(`[fsq] page ${page + 1}: ${results.length} results, cursor=${cursor}`);
     if (!cursor || results.length < 50) break;
   }
 
