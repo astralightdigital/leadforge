@@ -7,7 +7,6 @@ import { getIssueDescription } from '../lib/scoring';
 import { api } from '../lib/api';
 import SiteQualityBadge from '../components/SiteQualityBadge';
 import { showToast } from '../components/Toast';
-import LeadScoreBadge from '../components/LeadScoreBadge';
 
 const STATUSES = [
   'Not Contacted', 'Messaged', 'Replied',
@@ -39,7 +38,6 @@ export default function Pipeline() {
   // ── Sorting ────────────────────────────────────────────────────────────────
   const sorted = [...filtered].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1;
-    if (sortBy === 'leadScore') return (b.leadScore - a.leadScore) * dir;
     if (sortBy === 'daysSince') {
       const dA = a.contactedAt ? daysSince(a.contactedAt) : -1;
       const dB = b.contactedAt ? daysSince(b.contactedAt) : -1;
@@ -206,9 +204,6 @@ export default function Pipeline() {
                 <tr className="bg-slate-50 border-b border-slate-200">
                   <Th>Business</Th>
                   <Th>Site Quality</Th>
-                  <Th sortable onClick={() => toggleSort('leadScore')}>
-                    Score{sortIndicator('leadScore')}
-                  </Th>
                   <Th>Status</Th>
                   <Th>Contact</Th>
                   <Th sortable onClick={() => toggleSort('daysSince')}>
@@ -300,11 +295,6 @@ function LeadRow({
           <SiteQualityBadge quality={lead.siteQuality} />
         </td>
 
-        {/* Score */}
-        <td className="px-4 py-3">
-          <LeadScoreBadge score={lead.leadScore} />
-        </td>
-
         {/* Status */}
         <td className="px-4 py-3">
           <select
@@ -362,7 +352,7 @@ function LeadRow({
       {/* Expanded detail row */}
       {expanded && (
         <tr>
-          <td colSpan={8} className="px-4 py-5 bg-slate-50 border-t border-b border-slate-200">
+          <td colSpan={7} className="px-4 py-5 bg-slate-50 border-t border-b border-slate-200">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
               {/* Left: Details + Outreach */}

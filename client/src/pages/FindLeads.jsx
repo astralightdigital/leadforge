@@ -5,7 +5,6 @@ import { db } from '../firebase';
 import { getSiteQuality, calculateLeadScore } from '../lib/scoring';
 import { formatPhone } from '../lib/utils';
 import SiteQualityBadge from '../components/SiteQualityBadge';
-import LeadScoreBadge from '../components/LeadScoreBadge';
 import { showToast } from '../components/Toast';
 import { useLeads } from '../hooks/useLeads';
 import { api } from '../lib/api';
@@ -29,7 +28,7 @@ export default function FindLeads() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [addedIds, setAddedIds] = useState(new Set());
-  const [sortOrder, setSortOrder] = useState('quality');
+  const [sortOrder] = useState('quality');
   const [isFallback, setIsFallback] = useState(false);
 
   // Pre-fill from dashboard quick search
@@ -255,22 +254,6 @@ export default function FindLeads() {
               <span className="font-medium">{results.length}</span> results ·{' '}
               <span className="text-teal-600 font-medium">{addedIds.size}</span> added to pipeline
             </p>
-            <div className="flex items-center gap-1 text-xs">
-              <span className="text-slate-500 mr-1">Sort:</span>
-              {['quality', 'score'].map(opt => (
-                <button
-                  key={opt}
-                  onClick={() => setSortOrder(opt)}
-                  className={`px-2.5 py-1 rounded-md capitalize transition-colors ${
-                    sortOrder === opt
-                      ? 'bg-slate-800 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {opt === 'quality' ? 'Site quality' : 'Lead score'}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="space-y-3">
@@ -306,8 +289,6 @@ function LeadCard({ lead, added, onAdd }) {
       }`}
     >
       <div className="flex items-start gap-3">
-        <LeadScoreBadge score={lead.leadScore} />
-
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-start gap-2 mb-1">
             <h3 className="font-semibold text-slate-800 text-sm">{lead.businessName}</h3>
