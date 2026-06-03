@@ -12,7 +12,7 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173', 'http://localhost:3000'] }));
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173', 'http://localhost:3000', 'https://leadforge-leads-2026.web.app'] }));
 app.use(express.json());
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
