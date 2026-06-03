@@ -181,38 +181,31 @@ export default function FindLeads() {
                 className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
               />
 
-              {/* State — searchable datalist */}
-              <input
-                type="text"
-                list={`state-list-${i}`}
-                placeholder="State (e.g. TX)"
+              {/* State */}
+              <SplitCombo
                 value={s.state}
-                onChange={e => {
-                  const val = e.target.value.toUpperCase().slice(0, 2);
-                  updateRow(i, 'state', val);
-                  if (!CITIES_BY_STATE[val]) updateRow(i, 'city', '');
+                onChange={val => {
+                  const v = val.toUpperCase().slice(0, 2);
+                  updateRow(i, 'state', v);
+                  if (!CITIES_BY_STATE[v]) updateRow(i, 'city', '');
                 }}
-                onKeyDown={e => e.key === 'Enter' && runSearches()}
+                options={STATES}
+                placeholder="State"
+                onEnter={runSearches}
                 maxLength={2}
-                className="sm:w-28 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 uppercase"
+                className="sm:w-32"
+                inputClassName="uppercase"
               />
-              <datalist id={`state-list-${i}`}>
-                {STATES.map(st => <option key={st} value={st} />)}
-              </datalist>
 
-              {/* City — searchable datalist filtered by state */}
-              <input
-                type="text"
-                list={`city-list-${i}`}
-                placeholder="City (optional)"
+              {/* City */}
+              <SplitCombo
                 value={s.city}
-                onChange={e => updateRow(i, 'city', e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && runSearches()}
-                className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                onChange={val => updateRow(i, 'city', val)}
+                options={CITIES_BY_STATE[s.state] || []}
+                placeholder="City (optional)"
+                onEnter={runSearches}
+                className="flex-1"
               />
-              <datalist id={`city-list-${i}`}>
-                {(CITIES_BY_STATE[s.state] || []).map(c => <option key={c} value={c} />)}
-              </datalist>
 
               {searches.length > 1 && (
                 <button
@@ -353,6 +346,76 @@ function LeadCard({ lead, added, onAdd }) {
       >
         {added ? '✓ Added' : 'Add to Pipeline'}
       </button>
+    </div>
+  );
+}
+
+function SplitCombo({ value, onChange, options, placeholder, onEnter, maxLength, className = '', inputClassName = '' }) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState('filter'); // 'filter' = type-to-search | 'all' = arrow opened
+  const ref = useRef(null);
+
+  const shown = mode === 'all'
+    ? options
+    : options.filter(o => o.toLowerCase().includes(value.toLowerCase()));
+
+  useEffect(() => {
+    function onDown(e) {
+      if (!ref.current?.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  return (
+    <div ref={ref} className={`relative flex rounded-lg border border-slate-200 focus-within:ring-2 focus-within:ring-teal-400 bg-white ${className}`}>
+      {/* Text / search area */}
+      <input
+        type="text"
+        value={value}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        onChange={e => {
+          onChange(e.target.value);
+          setMode('filter');
+          setOpen(true);
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { setOpen(false); onEnter?.(); }
+          if (e.key === 'Escape') setOpen(false);
+        }}
+        className={`flex-1 min-w-0 bg-transparent px-3 py-2 text-sm focus:outline-none ${inputClassName}`}
+      />
+
+      {/* Divider + arrow */}
+      <div className="flex items-stretch shrink-0">
+        <div className="w-px bg-slate-200 my-1.5" />
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => { setMode('all'); setOpen(o => !o); }}
+          className="w-6 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-r-lg transition-colors"
+        >
+          <svg className={`w-2.5 h-2.5 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} viewBox="0 0 10 6" fill="none">
+            <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Dropdown list */}
+      {open && shown.length > 0 && (
+        <ul className="absolute top-[calc(100%+4px)] left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg max-h-52 overflow-y-auto text-sm">
+          {shown.map(opt => (
+            <li
+              key={opt}
+              onMouseDown={e => { e.preventDefault(); onChange(opt); setOpen(false); }}
+              className={`px-3 py-1.5 cursor-pointer hover:bg-teal-50 ${opt === value ? 'text-teal-600 font-medium bg-teal-50/50' : 'text-slate-700'}`}
+            >
+              {opt}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
