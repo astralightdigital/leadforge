@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { getSiteQuality, calculateLeadScore } from '../lib/scoring';
 import { formatPhone } from '../lib/utils';
 import SiteQualityBadge from '../components/SiteQualityBadge';
+import LeadScoreBadge from '../components/LeadScoreBadge';
 import { showToast } from '../components/Toast';
 import { useLeads } from '../hooks/useLeads';
 import { api } from '../lib/api';
@@ -95,12 +96,7 @@ export default function FindLeads() {
           businessType: b.searchTerm || b.businessType,
           phone: formatPhone(b.phone),
           siteQuality: quality,
-          leadScore: calculateLeadScore({
-            websiteUrl: b.websiteUrl,
-            reviewCount: b.reviewCount || 0,
-            rating: b.rating || 0,
-            phone: b.phone,
-          }),
+          leadScore: calculateLeadScore(b.websiteUrl),
         };
       });
 
@@ -289,6 +285,7 @@ function LeadCard({ lead, added, onAdd }) {
       }`}
     >
       <div className="flex items-start gap-3">
+        <LeadScoreBadge score={lead.leadScore} />
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-start gap-2 mb-1">
             <h3 className="font-semibold text-slate-800 text-sm">{lead.businessName}</h3>

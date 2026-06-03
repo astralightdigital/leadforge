@@ -1,25 +1,32 @@
-const WEAK_PATTERNS = ['wix', 'square', 'squarespace', 'godaddy', 'weebly', 'wixsite'];
+const FREE_SUBDOMAINS = [
+  '.wixsite.com', '.square.site', '.squareup.com',
+  '.weebly.com', '.godaddysites.com', '.jimdofree.com',
+  '.strikingly.com', '.carrd.co', '.webnode.com', '.site123.me',
+  '.webstarts.com', '.yolasite.com',
+];
+
+const BUILDER_SIGNALS = [
+  'wix.com', 'squarespace.com', 'godaddy.com', 'weebly.com',
+  'jimdo.com', 'strikingly.com', 'wordpress.com', 'blogspot.',
+  'tumblr.com', 'webflow.io', 'mystrikingly.com',
+];
 
 export function getSiteQuality(url) {
   if (!url) return 'none';
   const lower = url.toLowerCase();
-  if (WEAK_PATTERNS.some(p => lower.includes(p))) return 'weak';
+  if (FREE_SUBDOMAINS.some(d => lower.includes(d))) return 'weak';
+  if (BUILDER_SIGNALS.some(b => lower.includes(b))) return 'weak';
   return 'has';
 }
 
-export function calculateLeadScore({ websiteUrl, reviewCount = 0, rating = 0, phone }) {
-  const quality = getSiteQuality(websiteUrl);
-  let score = 0;
-
-  if (quality === 'none') score += 3;
-  else if (quality === 'weak') score += 2;
-
-  if (reviewCount > 50) score += 2;
-  if (reviewCount > 200) score += 1;
-  if (rating >= 4.0) score += 1;
-  if (phone) score += 1;
-
-  return Math.min(score, 10);
+// 5 = no website (best lead), 4 = free builder subdomain,
+// 3 = builder with custom domain, 1 = real custom domain
+export function calculateLeadScore(websiteUrl) {
+  if (!websiteUrl) return 5;
+  const url = websiteUrl.toLowerCase();
+  if (FREE_SUBDOMAINS.some(d => url.includes(d))) return 4;
+  if (BUILDER_SIGNALS.some(b => url.includes(b))) return 3;
+  return 1;
 }
 
 export function getIssueDescription(siteQuality, websiteUrl) {
