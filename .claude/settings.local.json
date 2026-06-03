@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\jblue\\\\Downloads\\\\proj4m\" -Recurse -File | Where-Object { $_.FullName -notmatch 'node_modules' } | Select-Object FullName | Sort-Object FullName)",
+      "PowerShell(firebase *)",
+      "PowerShell(gcloud --version 2>&1 | Select-Object -First 1)",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:3001/api/places-search?query=restaurant&city=Frisco&state=TX\" -UseBasicParsing -TimeoutSec 40 | Select-Object StatusCode, @{n='Preview';e={$_.Content.Substring\\(0,[Math]::Min\\(300,$_.Content.Length\\)\\)}})",
+      "PowerShell(Out-Null *)",
+      "WebFetch(domain:docs.foursquare.com)",
+      "PowerShell(New-Item *)",
+      "PowerShell(npm list *)",
+      "PowerShell(gh *)",
+      "PowerShell(winget install *)",
+      "PowerShell(npm install *)"
+    ]
+  }
+}

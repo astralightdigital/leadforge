@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prevent Leaflet tiles from bleeding over modals */
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-map-pane svg,
+.leaflet-map-pane canvas,
+.leaflet-zoom-box,
+.leaflet-image-layer,
+.leaflet-layer {
+  position: absolute;
+}
+
+.leaflet-popup-content p {
+  margin: 0;
+}
+
+/* Monospace data values */
+.font-data {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes toast-in {
+  0%   { opacity: 0; transform: translateY(16px) scale(0.95); }
+  60%  { opacity: 1; transform: translateY(-4px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes flash-green {
+  0%   { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.6); }
+  50%  { box-shadow: 0 0 0 8px rgba(20, 184, 166, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+}
+
+@keyframes pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.92); }
+  70%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+.animate-toast  { animation: toast-in 0.35s ease forwards; }
+.animate-flash  { animation: flash-green 0.6s ease forwards; }
+.animate-pop    { animation: pop 0.3s ease forwards; }

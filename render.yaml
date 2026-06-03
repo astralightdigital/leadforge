@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: leadforge-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: FOURSQUARE_API_KEY
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: GOOGLE_PLACES_EXPIRY
+        value: 2026-09-01
+      - key: ANTHROPIC_API_KEY
+        sync: false
