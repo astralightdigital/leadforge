@@ -17,9 +17,6 @@ app.use(express.json());
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// ── Provider rotation counter ─────────────────────────────────────────────────
-let searchCounter = 0;
-
 // ── OpenStreetMap / Overpass Places Search ────────────────────────────────────
 // Free, no API key, no account — uses Nominatim for geocoding + Overpass for POI data.
 
@@ -160,28 +157,6 @@ async function nominatimFallback(query, city, state, res) {
   }
 }
 
-async function googleSearch(query, city, state) {
-  const response = await axios.get('https://maps.googleapis.com/maps/api/place/textsearch/json', {
-    params: {
-      query: `${query} in ${city}, ${state}`,
-      key: process.env.GOOGLE_PLACES_API_KEY,
-    },
-  });
-
-  return (response.data.results || []).map(p => ({
-    fsqId:         `google-${p.place_id}`,
-    businessName:  p.name,
-    address:       p.formatted_address || '',
-    city:          `${city}, ${state}`,
-    lat:           p.geometry?.location?.lat || null,
-    lng:           p.geometry?.location?.lng || null,
-    phone:         null,
-    websiteUrl:    null,
-    businessType:  query,
-    foursquareUrl: null,
-  }));
-}
-
 async function foursquareSearch(query, city, state) {
   const geo = await geocodeCity(city, state);
 
@@ -226,42 +201,16 @@ app.get('/api/places-search', async (req, res) => {
     return res.status(400).json({ error: 'query and state are required' });
   }
 
-  const hasFsq    = !!process.env.FOURSQUARE_API_KEY;
-  const googleExpiry = process.env.GOOGLE_PLACES_EXPIRY ? new Date(process.env.GOOGLE_PLACES_EXPIRY) : null;
-  const googleExpired = googleExpiry && new Date() > googleExpiry;
-  const hasGoogle = !!process.env.GOOGLE_PLACES_API_KEY && !googleExpired;
-  if (googleExpired) console.log('[search] Google trial expired — using Foursquare only');
+  const hasFsq = !!process.env.FOURSQUARE_API_KEY;
 
-  if (hasFsq || hasGoogle) {
-    // Rotate providers on each search to spread credit usage
-    const useFoursquare = hasFsq && hasGoogle
-      ? searchCounter % 2 === 0   // alternate when both available
-      : hasFsq;                   // use whichever is configured
-    searchCounter++;
-
-    const provider = useFoursquare ? 'foursquare' : 'google';
+  if (hasFsq) {
     try {
-      console.log(`[search] using ${provider} for: ${query} in ${city}, ${state}`);
-      const businesses = useFoursquare
-        ? await foursquareSearch(query, city, state)
-        : await googleSearch(query, city, state);
-      console.log(`[search] ${provider} returned ${businesses.length} results`);
-      return res.json({ businesses, provider });
+      console.log(`[search] using foursquare for: ${query} in ${city}, ${state}`);
+      const businesses = await foursquareSearch(query, city, state);
+      console.log(`[search] foursquare returned ${businesses.length} results`);
+      return res.json({ businesses, provider: 'foursquare' });
     } catch (err) {
-      console.error(`[search] ${provider} failed:`, err.message);
-      // Try the other provider as fallback
-      if (hasFsq && hasGoogle) {
-        try {
-          const fallbackBusinesses = useFoursquare
-            ? await googleSearch(query, city, state)
-            : await foursquareSearch(query, city, state);
-          const fallbackProvider = useFoursquare ? 'google' : 'foursquare';
-          console.log(`[search] fallback ${fallbackProvider} returned ${fallbackBusinesses.length} results`);
-          return res.json({ businesses: fallbackBusinesses, provider: fallbackProvider });
-        } catch (fallbackErr) {
-          console.error('[search] both providers failed, falling back to OSM');
-        }
-      }
+      console.error('[search] foursquare failed, falling back to OSM:', err.message);
     }
   }
 
