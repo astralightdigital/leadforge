@@ -40,7 +40,7 @@ async function geocodeCity(city, state) {
 
   const { lat, lon } = resp.data[0];
   const clat = parseFloat(lat), clon = parseFloat(lon);
-  const delta = 0.18; // ~20 km radius
+  const delta = 0.09; // ~10 km radius
   return { lat: clat, lon: clon, south: clat - delta, north: clat + delta, west: clon - delta, east: clon + delta };
 }
 
@@ -194,7 +194,7 @@ async function foursquareSearch(query, city, state) {
     params: {
       query,
       ll: `${geo.lat},${geo.lon}`,
-      radius: 20000,
+      radius: 10000,
       limit: 50,
     },
   });
