@@ -89,7 +89,7 @@ function OutreachCard({ lead }) {
     ? `mailto:${lead.discoveredEmail}?subject=${encodeURIComponent('Quick question about your website')}&body=${encodeURIComponent(emailBody)}`
     : null;
 
-  const igHref = `https://www.instagram.com/direct/new/`;
+  const igHref = `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(lead.businessName)}`;
 
   const fbHref = `https://www.facebook.com/search/top/?q=${encodeURIComponent(
     [lead.businessName, lead.city].filter(Boolean).join(' ')
