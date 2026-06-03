@@ -160,26 +160,16 @@ async function nominatimFallback(query, city, state, res) {
 async function foursquareSearch(query, city, state) {
   const geo = await geocodeCity(city, state);
 
-  const headers = {
-    Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
-    Accept: 'application/json',
-    'X-Places-Api-Version': '2025-06-17',
-  };
-  const baseParams = { query, ll: `${geo.lat},${geo.lon}`, radius: 20000, limit: 50 };
+  const response = await axios.get('https://places-api.foursquare.com/places/search', {
+    headers: {
+      Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
+      Accept: 'application/json',
+      'X-Places-Api-Version': '2025-06-17',
+    },
+    params: { query, ll: `${geo.lat},${geo.lon}`, radius: 20000, limit: 50 },
+  });
 
-  let allRaw = [];
-  let cursor = null;
-
-  for (let page = 0; page < 3; page++) {
-    const params = cursor ? { ...baseParams, cursor } : baseParams;
-    const response = await axios.get('https://places-api.foursquare.com/places/search', { headers, params });
-    const results = response.data.results || [];
-    allRaw = allRaw.concat(results);
-    // cursor lives at top-level or inside context depending on API version
-    cursor = response.data.cursor ?? response.data.context?.cursor ?? null;
-    console.log(`[fsq] page ${page + 1}: ${results.length} results, cursor=${cursor}`);
-    if (!cursor || results.length < 50) break;
-  }
+  const allRaw = response.data.results || [];
 
   const mapPlace = p => ({
     fsqId:         p.fsq_place_id,
