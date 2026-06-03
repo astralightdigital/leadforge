@@ -29,7 +29,7 @@ export default function FindLeads() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [addedIds, setAddedIds] = useState(new Set());
-  const [sortOrder] = useState('quality');
+  const sortOrder = 'quality';
   const [isFallback, setIsFallback] = useState(false);
 
   // Pre-fill from dashboard quick search
@@ -153,8 +153,6 @@ export default function FindLeads() {
     return QUALITY_ORDER[a.siteQuality] - QUALITY_ORDER[b.siteQuality] || b.leadScore - a.leadScore;
   });
 
-  const validCount = searches.filter(s => s.term.trim() && s.state.trim()).length;
-
   return (
     <div className="p-4 md:p-8 max-w-5xl">
       <h2 className="text-2xl font-bold text-slate-800 mb-1">Find Leads</h2>
@@ -224,12 +222,10 @@ export default function FindLeads() {
           </button>
           <button
             onClick={runSearches}
-            disabled={loading || validCount === 0}
+            disabled={loading}
             className="ml-auto bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg px-6 py-2 text-sm font-medium transition-colors"
           >
-            {loading
-              ? 'Searching…'
-              : `Run ${validCount} Search${validCount !== 1 ? 'es' : ''}`}
+            {loading ? 'Searching…' : 'Run Search'}
           </button>
         </div>
 
@@ -353,6 +349,7 @@ function SplitCombo({ value, onChange, options, placeholder, onEnter, maxLength,
         value={value}
         maxLength={maxLength}
         placeholder={placeholder}
+        onFocus={() => { setMode('all'); setOpen(true); }}
         onChange={e => {
           onChange(e.target.value);
           setMode('filter');
