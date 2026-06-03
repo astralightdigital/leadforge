@@ -157,7 +157,7 @@ export default function FindLeads() {
     <div className="p-4 md:p-8 max-w-5xl">
       <h2 className="text-2xl font-bold text-slate-800 mb-1">Find Leads</h2>
       <p className="text-slate-500 text-sm mb-6">
-        Search for local businesses with weak or no websites. Queue multiple searches to run them simultaneously.
+        Search for local businesses with weak or no websites. Add rows to search multiple business types at once — results are combined and deduplicated.
       </p>
 
       {/* Search builder */}
@@ -217,6 +217,7 @@ export default function FindLeads() {
           <button
             onClick={addRow}
             className="text-sm text-teal-600 hover:text-teal-700 font-medium"
+            title="Search a different business type in the same area"
           >
             + Add another search
           </button>

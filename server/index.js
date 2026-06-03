@@ -183,24 +183,28 @@ async function googleSearch(query, city, state) {
 }
 
 async function foursquareSearch(query, city, state) {
-  // Geocode city first — new FSQ API requires ll=lat,lng instead of near=
   const geo = await geocodeCity(city, state);
 
-  const response = await axios.get('https://places-api.foursquare.com/places/search', {
-    headers: {
-      Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
-      Accept: 'application/json',
-      'X-Places-Api-Version': '2025-06-17',
-    },
-    params: {
-      query,
-      ll: `${geo.lat},${geo.lon}`,
-      radius: 20000,
-      limit: 50,
-    },
-  });
+  const headers = {
+    Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
+    Accept: 'application/json',
+    'X-Places-Api-Version': '2025-06-17',
+  };
+  const baseParams = { query, ll: `${geo.lat},${geo.lon}`, radius: 20000, limit: 50 };
 
-  return (response.data.results || []).map(p => ({
+  let allRaw = [];
+  let cursor = null;
+
+  for (let page = 0; page < 3; page++) {
+    const params = cursor ? { ...baseParams, cursor } : baseParams;
+    const response = await axios.get('https://places-api.foursquare.com/places/search', { headers, params });
+    const results = response.data.results || [];
+    allRaw = allRaw.concat(results);
+    cursor = response.data.cursor ?? null;
+    if (!cursor || results.length < 50) break;
+  }
+
+  const mapPlace = p => ({
     fsqId:         p.fsq_place_id,
     businessName:  p.name,
     address:       [p.location?.address, p.location?.locality, p.location?.region, p.location?.postcode].filter(Boolean).join(', '),
@@ -211,7 +215,9 @@ async function foursquareSearch(query, city, state) {
     websiteUrl:    p.website || null,
     businessType:  p.categories?.[0]?.name || query,
     foursquareUrl: p.link || null,
-  }));
+  });
+
+  return allRaw.map(mapPlace);
 }
 
 app.get('/api/places-search', async (req, res) => {
@@ -302,7 +308,7 @@ app.get('/api/places-search', async (req, res) => {
         seen.add(key);
         return true;
       })
-      .slice(0, 50);
+      .slice(0, 200);
 
     // TODO: Google Places enrichment — when API key is available, call Google Places API here
     // to find missing website URLs using businessName + address as the search query.
