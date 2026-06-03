@@ -26,9 +26,10 @@ let searchCounter = 0;
 async function geocodeCity(city, state) {
   // Strip any state abbreviation accidentally typed in the city field
   const cleanCity = city.replace(/,?\s+[A-Z]{2}$/, '').trim();
+  const geoQuery = cleanCity ? `${cleanCity}, ${state}` : state;
 
   const resp = await axios.get('https://nominatim.openstreetmap.org/search', {
-    params: { q: `${cleanCity}, ${state}`, format: 'json', limit: 1, countrycodes: 'us' },
+    params: { q: geoQuery, format: 'json', limit: 1, countrycodes: 'us' },
     headers: {
       'User-Agent': 'LeadForge/1.0',
       'Accept': '*/*',
@@ -36,7 +37,7 @@ async function geocodeCity(city, state) {
     timeout: 10000,
   });
 
-  if (!resp.data.length) throw new Error(`City not found: ${cleanCity}, ${state}. Try a nearby larger city.`);
+  if (!resp.data.length) throw new Error(`Location not found: ${geoQuery}. Try adding a city name.`);
 
   const { lat, lon } = resp.data[0];
   const clat = parseFloat(lat), clon = parseFloat(lon);
@@ -214,9 +215,9 @@ async function foursquareSearch(query, city, state) {
 }
 
 app.get('/api/places-search', async (req, res) => {
-  const { query, city, state } = req.query;
-  if (!query || !city || !state) {
-    return res.status(400).json({ error: 'query, city, and state are required' });
+  const { query, city = '', state } = req.query;
+  if (!query || !state) {
+    return res.status(400).json({ error: 'query and state are required' });
   }
 
   const hasFsq    = !!process.env.FOURSQUARE_API_KEY;

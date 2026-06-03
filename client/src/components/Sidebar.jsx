@@ -3,10 +3,11 @@ import { useLeads } from '../hooks/useLeads';
 import { daysSince } from '../lib/utils';
 
 const NAV = [
-  { to: '/',         label: 'Dashboard',  icon: '▦' },
-  { to: '/find',     label: 'Find Leads', icon: '⊕' },
-  { to: '/pipeline', label: 'Pipeline',   icon: '≡' },
-  { to: '/map',      label: 'Map',        icon: '◎' },
+  { to: '/',          label: 'Dashboard',  icon: '▦' },
+  { to: '/find',      label: 'Find Leads', icon: '⊕' },
+  { to: '/pipeline',  label: 'Pipeline',   icon: '≡' },
+  { to: '/outreach',  label: 'Outreach',   icon: '✉' },
+  { to: '/map',       label: 'Map',        icon: '◎' },
 ];
 
 export default function Sidebar() {
@@ -17,7 +18,7 @@ export default function Sidebar() {
   ).length;
 
   return (
-    <aside className="w-56 flex-shrink-0 bg-slate-900 flex flex-col h-screen sticky top-0 z-10">
+    <aside className="hidden md:flex w-56 flex-shrink-0 bg-slate-900 flex-col h-screen sticky top-0 z-10">
       {/* Logo */}
       <div className="px-6 py-5 border-b border-slate-700/60">
         <h1 className="text-teal-400 font-bold text-xl tracking-tight">LeadForge</h1>

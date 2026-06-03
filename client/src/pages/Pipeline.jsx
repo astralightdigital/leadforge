@@ -121,7 +121,7 @@ export default function Pipeline() {
   const hasFilters = Object.values(filters).some(Boolean);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Pipeline</h2>

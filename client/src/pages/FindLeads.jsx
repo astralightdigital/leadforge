@@ -9,6 +9,14 @@ import LeadScoreBadge from '../components/LeadScoreBadge';
 import { showToast } from '../components/Toast';
 import { useLeads } from '../hooks/useLeads';
 import { api } from '../lib/api';
+import { CITIES_BY_STATE } from '../lib/usaCities';
+
+const STATES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN',
+  'IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH',
+  'NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT',
+  'VT','VA','WA','WV','WI','WY',
+];
 
 const QUALITY_ORDER = { none: 0, weak: 1, has: 2 };
 
@@ -48,9 +56,9 @@ export default function FindLeads() {
   }
 
   async function runSearches() {
-    const valid = searches.filter(s => s.term.trim() && s.city.trim() && s.state.trim());
+    const valid = searches.filter(s => s.term.trim() && s.state.trim());
     if (!valid.length) {
-      setError('Fill in business type, city, and state for at least one row.');
+      setError('Fill in business type and state for at least one row.');
       return;
     }
     setError('');
@@ -150,10 +158,10 @@ export default function FindLeads() {
     return QUALITY_ORDER[a.siteQuality] - QUALITY_ORDER[b.siteQuality] || b.leadScore - a.leadScore;
   });
 
-  const validCount = searches.filter(s => s.term.trim() && s.city.trim() && s.state.trim()).length;
+  const validCount = searches.filter(s => s.term.trim() && s.state.trim()).length;
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="p-4 md:p-8 max-w-5xl">
       <h2 className="text-2xl font-bold text-slate-800 mb-1">Find Leads</h2>
       <p className="text-slate-500 text-sm mb-6">
         Search for local businesses with weak or no websites. Queue multiple searches to run them simultaneously.
@@ -163,7 +171,7 @@ export default function FindLeads() {
       <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
         <div className="space-y-3 mb-4">
           {searches.map((s, i) => (
-            <div key={i} className="flex gap-3 items-center">
+            <div key={i} className="flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-center">
               <input
                 type="text"
                 placeholder="Business type (e.g. nail salon)"
@@ -172,23 +180,40 @@ export default function FindLeads() {
                 onKeyDown={e => e.key === 'Enter' && runSearches()}
                 className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
               />
+
+              {/* State — searchable datalist */}
               <input
                 type="text"
-                placeholder="City (e.g. Frisco)"
+                list={`state-list-${i}`}
+                placeholder="State (e.g. TX)"
+                value={s.state}
+                onChange={e => {
+                  const val = e.target.value.toUpperCase().slice(0, 2);
+                  updateRow(i, 'state', val);
+                  if (!CITIES_BY_STATE[val]) updateRow(i, 'city', '');
+                }}
+                onKeyDown={e => e.key === 'Enter' && runSearches()}
+                maxLength={2}
+                className="sm:w-28 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 uppercase"
+              />
+              <datalist id={`state-list-${i}`}>
+                {STATES.map(st => <option key={st} value={st} />)}
+              </datalist>
+
+              {/* City — searchable datalist filtered by state */}
+              <input
+                type="text"
+                list={`city-list-${i}`}
+                placeholder="City (optional)"
                 value={s.city}
                 onChange={e => updateRow(i, 'city', e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && runSearches()}
                 className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
               />
-              <input
-                type="text"
-                placeholder="State (e.g. TX)"
-                value={s.state}
-                onChange={e => updateRow(i, 'state', e.target.value.toUpperCase())}
-                onKeyDown={e => e.key === 'Enter' && runSearches()}
-                maxLength={2}
-                className="w-24 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 uppercase"
-              />
+              <datalist id={`city-list-${i}`}>
+                {(CITIES_BY_STATE[s.state] || []).map(c => <option key={c} value={c} />)}
+              </datalist>
+
               {searches.length > 1 && (
                 <button
                   onClick={() => removeRow(i)}
@@ -283,50 +308,44 @@ function LeadCard({ lead, added, onAdd }) {
 
   return (
     <div
-      className={`bg-white rounded-xl border p-4 flex items-start gap-4 transition-all duration-300 ${
+      className={`bg-white rounded-xl border p-4 transition-all duration-300 ${
         added ? 'border-teal-400 bg-teal-50/60 animate-flash' : 'border-slate-200 hover:border-slate-300'
       }`}
     >
-      <LeadScoreBadge score={lead.leadScore} />
+      <div className="flex items-start gap-3">
+        <LeadScoreBadge score={lead.leadScore} />
 
-      <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-start gap-2 mb-1">
-          <h3 className="font-semibold text-slate-800 text-sm">{lead.businessName}</h3>
-          <SiteQualityBadge quality={lead.siteQuality} />
-        </div>
-        <p className="text-xs text-slate-500 mb-2">{lead.businessType} · {lead.address}</p>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-start gap-2 mb-1">
+            <h3 className="font-semibold text-slate-800 text-sm">{lead.businessName}</h3>
+            <SiteQualityBadge quality={lead.siteQuality} />
+          </div>
+          <p className="text-xs text-slate-500 mb-2">{lead.businessType} · {lead.address}</p>
 
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-          {lead.phone && <span>{lead.phone}</span>}
-          {lead.websiteUrl ? (
-            <a
-              href={lead.websiteUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue-600 hover:underline truncate max-w-xs"
-            >
-              {lead.websiteUrl}
-            </a>
-          ) : (
-            <span className="text-red-500 font-medium">No website</span>
-          )}
-          {lead.foursquareUrl && (
-            <a
-              href={lead.foursquareUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-slate-400 hover:text-slate-600"
-            >
-              Foursquare ↗
-            </a>
-          )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+            {lead.phone && <span>{lead.phone}</span>}
+            {lead.websiteUrl ? (
+              <a href={lead.websiteUrl} target="_blank" rel="noreferrer"
+                className="text-blue-600 hover:underline truncate max-w-xs">
+                {lead.websiteUrl}
+              </a>
+            ) : (
+              <span className="text-red-500 font-medium">No website</span>
+            )}
+            {lead.foursquareUrl && (
+              <a href={lead.foursquareUrl} target="_blank" rel="noreferrer"
+                className="text-slate-400 hover:text-slate-600">
+                Foursquare ↗
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
       <button
         onClick={handleAdd}
         disabled={added}
-        className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+        className={`mt-3 w-full sm:w-auto sm:float-right py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
           added
             ? 'bg-teal-500 text-white cursor-default'
             : 'bg-slate-800 hover:bg-slate-700 active:scale-95 text-white'
