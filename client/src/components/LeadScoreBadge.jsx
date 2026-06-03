@@ -9,7 +9,7 @@ const CONFIG = {
 export default function LeadScoreBadge({ score }) {
   const { label, color } = CONFIG[score] ?? CONFIG[1];
   return (
-    <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+    <div className="flex flex-col items-center gap-0.5 w-8 flex-shrink-0">
       <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full border-2 font-mono font-bold text-sm ${color}`}>
         {score}
       </span>
