@@ -26,6 +26,9 @@ export function calculateLeadScore(websiteUrl) {
   const url = websiteUrl.toLowerCase();
   if (FREE_SUBDOMAINS.some(d => url.includes(d))) return 4;
   if (BUILDER_SIGNALS.some(b => url.includes(b))) return 3;
+  try {
+    if (!new URL(websiteUrl).hostname.endsWith('.com')) return 2;
+  } catch {}
   return 1;
 }
 
