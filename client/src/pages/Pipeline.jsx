@@ -254,6 +254,32 @@ export default function Pipeline() {
     showToast('Email rescan complete');
   }
 
+  async function fixCoords() {
+    // Fix OSM leads missing coordinates by geocoding their address
+    const osmMissing = leads.filter(l => l.fsqId?.startsWith('osm-') && (l.lat == null || l.lng == null) && l.address);
+    if (!osmMissing.length) { showToast('No OSM leads missing coordinates'); return; }
+    setSyncing(true);
+    setSyncProgress({ done: 0, total: osmMissing.length });
+    const BATCH = 3;
+    for (let i = 0; i < osmMissing.length; i += BATCH) {
+      await Promise.all(osmMissing.slice(i, i + BATCH).map(async lead => {
+        try {
+          const q = encodeURIComponent(lead.address);
+          const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`, {
+            headers: { 'User-Agent': 'LeadForge/1.0' }
+          });
+          const data = await r.json();
+          if (data[0]) await updateDoc(doc(db, 'leads', lead.id), { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+        } catch {}
+      }));
+      setSyncProgress({ done: Math.min(i + BATCH, osmMissing.length), total: osmMissing.length });
+      await new Promise(r => setTimeout(r, 1100)); // Nominatim 1 req/sec limit
+    }
+    setSyncing(false);
+    setSyncProgress(null);
+    showToast(`Fixed coordinates for ${osmMissing.length} OSM leads`);
+  }
+
   async function syncSocials() {
     const toSync = leads.filter(l =>
       l.fsqId && !l.fsqId.startsWith('osm-') && (
@@ -348,6 +374,13 @@ export default function Pipeline() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={fixCoords}
+            disabled={syncing}
+            className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {syncing && syncProgress ? `Fixing ${syncProgress.done}/${syncProgress.total}…` : 'Fix Coords'}
+          </button>
           <button
             onClick={findClosed}
             disabled={syncing}
