@@ -448,6 +448,21 @@ function LeadRow({
             ) : (
               <span className="text-slate-400">No email found</span>
             )}
+            {lead.socialMedia?.instagram && (
+              <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer" className="text-pink-500 hover:underline block">
+                Instagram ↗
+              </a>
+            )}
+            {lead.socialMedia?.facebook && (
+              <a href={lead.socialMedia.facebook} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline block">
+                Facebook ↗
+              </a>
+            )}
+            {lead.socialMedia?.twitter && (
+              <a href={lead.socialMedia.twitter} target="_blank" rel="noreferrer" className="text-sky-500 hover:underline block">
+                X/Twitter ↗
+              </a>
+            )}
           </div>
         </td>
 
