@@ -26,7 +26,7 @@ const SCORE_OPTIONS = [
 
 export default function Pipeline() {
   const { leads, loading } = useLeads();
-  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '', ratings: [], contact: [] });
+  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '', ratings: [], contact: [], contactSearch: '' });
   const [showRatingFilter, setShowRatingFilter]   = useState(false);
   const [showContactFilter, setShowContactFilter] = useState(false);
   const [sortBy, setSortBy]   = useState('dateAdded');
@@ -55,6 +55,15 @@ export default function Pipeline() {
     if (filters.city    && !l.city?.toLowerCase().includes(filters.city.toLowerCase())) return false;
     if (filters.type    && !l.businessType?.toLowerCase().includes(filters.type.toLowerCase())) return false;
     if (filters.ratings.length > 0 && !filters.ratings.includes(l.leadScore)) return false;
+    if (filters.contactSearch) {
+      const needle = filters.contactSearch.toLowerCase();
+      const sm = l.socialMedia || {};
+      const haystack = [
+        l.discoveredEmail, l.phone,
+        sm.instagram, sm.facebook, sm.twitter, sm.tiktok, sm.snapchat, sm.youtube,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(needle)) return false;
+    }
     if (filters.contact.length > 0) {
       const sm = l.socialMedia || {};
       const hasSocial = Object.values(sm).some(Boolean);
@@ -129,7 +138,7 @@ export default function Pipeline() {
             if (![...q.keys()].length) return;
             const res = await fetch(api(`/api/fetch-email?${q}`));
             const { email } = await res.json();
-            if (email) await updateDoc(doc(db, 'leads', lead.id), { discoveredEmail: email });
+            if (email) await updateDoc(doc(db, 'leads', lead.id), { discoveredEmail: email, emailGuessed: !!guessed });
           } catch {}
         })
       );
@@ -219,7 +228,7 @@ export default function Pipeline() {
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div className="p-8 text-slate-400 text-sm">Loading pipeline…</div>;
 
-  const hasFilters = filters.status || filters.quality || filters.city || filters.type || filters.ratings.length > 0 || filters.contact.length > 0;
+  const hasFilters = filters.status || filters.quality || filters.city || filters.type || filters.ratings.length > 0 || filters.contact.length > 0 || filters.contactSearch;
 
   return (
     <div className="p-4 md:p-8">
@@ -302,6 +311,14 @@ export default function Pipeline() {
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
         />
 
+        <input
+          type="text"
+          placeholder="Search contact info…"
+          value={filters.contactSearch}
+          onChange={e => setFilters(f => ({ ...f, contactSearch: e.target.value }))}
+          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+        />
+
         {/* Contact toggle */}
         <button
           onClick={() => setShowContactFilter(p => !p)}
@@ -330,7 +347,7 @@ export default function Pipeline() {
 
         {hasFilters && (
           <button
-            onClick={() => { setFilters({ status: '', quality: '', city: '', type: '', ratings: [], contact: [] }); setShowRatingFilter(false); setShowContactFilter(false); }}
+            onClick={() => { setFilters({ status: '', quality: '', city: '', type: '', ratings: [], contact: [], contactSearch: '' }); setShowRatingFilter(false); setShowContactFilter(false); }}
             className="text-sm text-red-400 hover:text-red-600"
           >
             Clear filters
@@ -549,6 +566,7 @@ function LeadRow({
             {lead.discoveredEmail ? (
               <a href={`mailto:${lead.discoveredEmail}`} className="text-blue-600 hover:underline block truncate max-w-[160px]">
                 {lead.discoveredEmail}
+                {lead.emailGuessed && <span className="text-slate-400 text-[10px] ml-1">?</span>}
               </a>
             ) : (
               <span className="text-slate-400">No email found</span>

@@ -143,7 +143,7 @@ export default function FindLeads() {
               if ([...q.keys()].length) {
                 fetch(api(`/api/fetch-email?${q}`))
                   .then(r => r.json())
-                  .then(({ email }) => { if (email) updateDoc(doc(db, 'leads', docRef.id), { discoveredEmail: email }).catch(() => {}); })
+                  .then(({ email, guessed }) => { if (email) updateDoc(doc(db, 'leads', docRef.id), { discoveredEmail: email, emailGuessed: !!guessed }).catch(() => {}); })
                   .catch(() => {});
               }
             }
@@ -250,7 +250,7 @@ export default function FindLeads() {
         .then(r => r.json())
         .then(({ email }) => {
           if (email) {
-            updateDoc(doc(db, 'leads', docRef.id), { discoveredEmail: email }).catch(() => {});
+            updateDoc(doc(db, 'leads', docRef.id), { discoveredEmail: email, emailGuessed: !!guessed }).catch(() => {});
           }
         })
         .catch(() => {});

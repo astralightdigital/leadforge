@@ -533,7 +533,27 @@ app.get('/api/fetch-email', async (req, res) => {
   );
 
   const found = results.find(r => r.status === 'fulfilled');
-  res.json({ email: found?.value || null });
+  if (found) return res.json({ email: found.value });
+
+  // Last resort: guess common prefixes on the domain and verify with MX lookup
+  if (url) {
+    try {
+      const { hostname } = new URL(url);
+      const domain = hostname.replace(/^www\./, '');
+      // Skip free-builder domains — guessing emails there is meaningless
+      const skipDomains = ['wix.com','squarespace.com','godaddy.com','weebly.com','business.site','sites.google.com','bizhub.com'];
+      if (!skipDomains.some(d => domain.includes(d))) {
+        const dns = await import('dns').then(m => m.promises);
+        const mx = await dns.resolveMx(domain).catch(() => []);
+        if (mx.length > 0) {
+          // Domain accepts email — return best-guess, flagged as unverified
+          return res.json({ email: `info@${domain}`, guessed: true });
+        }
+      }
+    } catch {}
+  }
+
+  res.json({ email: null });
 });
 
 // ── Outreach Message Generator ─────────────────────────────────────────────────
