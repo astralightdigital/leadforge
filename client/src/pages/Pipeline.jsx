@@ -129,14 +129,10 @@ export default function Pipeline() {
 
   function isJunkUrl(url) {
     if (!url) return false;
-    // Decode all percent-encoding (%2F → /, %40 → @, etc.)
-    let decoded = url;
-    try { decoded = decodeURIComponent(url); } catch {}
-    // Also try replacing %2F manually in case decodeURIComponent fails
-    decoded = decoded.replace(/%2F/gi, '/').replace(/%3A/gi, ':').replace(/%40/gi, '@');
-    const lower = decoded.toLowerCase();
-    // Protocol-relative URLs (starting with //) are never real business sites
-    if (decoded.startsWith('//')) return true;
+    const trimmed = url.trim();
+    // A real business website must start with http — anything else is junk
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return true;
+    const lower = trimmed.toLowerCase();
     if (JUNK_PATTERNS.some(p => lower.includes(p))) return true;
     if (JUNK_EXT.some(e => lower.split('?')[0].endsWith(e))) return true;
     return false;
