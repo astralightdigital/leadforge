@@ -17,6 +17,9 @@ export default function Dashboard() {
     total:         leads.length,
     noWebsite:     leads.filter(l => l.siteQuality === 'none').length,
     weakSite:      leads.filter(l => l.siteQuality === 'weak').length,
+    hasPhone:      leads.filter(l => l.phone).length,
+    hasEmail:      leads.filter(l => l.discoveredEmail && !l.emailGuessed).length,
+    hasSocial:     leads.filter(l => Object.values(l.socialMedia || {}).some(Boolean)).length,
     messaged:      leads.filter(l => l.status === 'Messaged').length,
     replied:       leads.filter(l => l.status === 'Replied' || l.status === 'Meeting Set').length,
     needsFollowUp: leads.filter(l => l.status === 'Messaged' && l.contactedAt && daysSince(l.contactedAt) >= 5).length,
@@ -37,7 +40,7 @@ export default function Dashboard() {
       <h2 className="text-2xl font-bold text-slate-800 mb-6">Dashboard</h2>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
         {[
           { label: 'Total Leads',  value: stats.total,          color: 'text-slate-800' },
           { label: 'No Website',   value: stats.noWebsite,      color: 'text-red-600' },
@@ -49,6 +52,20 @@ export default function Dashboard() {
           <div key={stat.label} className="bg-white rounded-xl border border-slate-200 p-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">{stat.label}</p>
             <p className={`text-2xl font-bold font-mono mt-1 ${stat.color}`}>{stat.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Contact coverage */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        {[
+          { label: 'Have Phone',  value: stats.hasPhone,  color: 'text-teal-600' },
+          { label: 'Have Email',  value: stats.hasEmail,  color: 'text-blue-600' },
+          { label: 'Have Social', value: stats.hasSocial, color: 'text-pink-600' },
+        ].map(stat => (
+          <div key={stat.label} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+            <p className={`text-2xl font-bold font-mono ${stat.color}`}>{stat.value}</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">{stat.label}</p>
           </div>
         ))}
       </div>
