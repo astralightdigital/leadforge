@@ -11,7 +11,7 @@ import { showToast } from '../components/Toast';
 
 const STATUSES = [
   'Not Contacted', 'Messaged', 'Replied',
-  'Meeting Set', 'Closed Won', 'Closed Lost',
+  'Meeting Set', 'Closed Won', 'Closed Lost', 'Custom',
 ];
 
 const MSG_TYPES = ['Instagram DM', 'Cold Email', 'Walk-in Talking Points'];

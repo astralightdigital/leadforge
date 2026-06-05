@@ -8,6 +8,7 @@ const LEGEND = [
   { color: '#22c55e', label: 'Replied / Meeting Set' },
   { color: '#3b82f6', label: 'Closed Won' },
   { color: '#6b7280', label: 'Closed Lost' },
+  { color: '#a855f7', label: 'Custom' },
 ];
 
 const SCORES = [

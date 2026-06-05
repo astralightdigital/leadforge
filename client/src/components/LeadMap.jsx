@@ -11,11 +11,12 @@ const STATUS_COLORS = {
   'Meeting Set':   '#22c55e',
   'Closed Won':    '#3b82f6',
   'Closed Lost':   '#6b7280',
+  'Custom':        '#a855f7',
 };
 
 const STATUSES = [
   'Not Contacted', 'Messaged', 'Replied',
-  'Meeting Set', 'Closed Won', 'Closed Lost',
+  'Meeting Set', 'Closed Won', 'Closed Lost', 'Custom',
 ];
 
 function LeadPin({ lead, mini }) {
