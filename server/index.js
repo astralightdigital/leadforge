@@ -21,6 +21,10 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const geocodeCache = new Map();
 const GEOCODE_TTL = 20 * 60 * 1000; // 20 minutes
 
+// ── Search result cache — repeat searches cost 0 FSQ credits ─────────────────
+const searchCache = new Map();
+const SEARCH_TTL = 30 * 60 * 1000; // 30 minutes
+
 // ── OpenStreetMap / Overpass Places Search ────────────────────────────────────
 // Free, no API key, no account — uses Nominatim for geocoding + Overpass for POI data.
 
@@ -171,60 +175,60 @@ async function nominatimFallback(query, city, state, res) {
   }
 }
 
-// Major population centers per state — used for state-wide searches so results
-// aren't limited to a single geocoded point.
+// Top 5 population centers per state — capped at 5 to limit FSQ API call cost.
+// (Each hub = 1 FSQ call, free tier = 1000/day.)
 const STATE_HUBS = {
-  AL: ['Birmingham','Montgomery','Huntsville','Mobile'],
-  AK: ['Anchorage','Fairbanks','Juneau'],
-  AZ: ['Phoenix','Tucson','Mesa','Chandler','Scottsdale','Tempe'],
-  AR: ['Little Rock','Fayetteville','Fort Smith','Jonesboro'],
-  CA: ['Los Angeles','San Diego','San Jose','San Francisco','Fresno','Sacramento','Oakland','Long Beach'],
+  AL: ['Birmingham','Montgomery','Huntsville','Mobile','Tuscaloosa'],
+  AK: ['Anchorage','Fairbanks','Juneau','Sitka','Ketchikan'],
+  AZ: ['Phoenix','Tucson','Mesa','Chandler','Scottsdale'],
+  AR: ['Little Rock','Fayetteville','Fort Smith','Jonesboro','Springdale'],
+  CA: ['Los Angeles','San Diego','San Jose','San Francisco','Sacramento'],
   CO: ['Denver','Colorado Springs','Aurora','Fort Collins','Lakewood'],
   CT: ['Bridgeport','New Haven','Hartford','Stamford','Waterbury'],
   DC: ['Washington'],
-  DE: ['Wilmington','Dover','Newark'],
-  FL: ['Jacksonville','Miami','Tampa','Orlando','St. Petersburg','Fort Lauderdale','Tallahassee'],
-  GA: ['Atlanta','Augusta','Columbus','Macon','Savannah','Athens'],
-  HI: ['Honolulu','Pearl City','Hilo','Kailua'],
+  DE: ['Wilmington','Dover','Newark','Middletown','Smyrna'],
+  FL: ['Jacksonville','Miami','Tampa','Orlando','St. Petersburg'],
+  GA: ['Atlanta','Augusta','Columbus','Macon','Savannah'],
+  HI: ['Honolulu','Pearl City','Hilo','Kailua','Kaneohe'],
   ID: ['Boise','Nampa','Meridian','Idaho Falls','Pocatello'],
-  IL: ['Chicago','Aurora','Rockford','Joliet','Naperville','Peoria','Springfield'],
+  IL: ['Chicago','Aurora','Rockford','Joliet','Naperville'],
   IN: ['Indianapolis','Fort Wayne','Evansville','South Bend','Carmel'],
   IA: ['Des Moines','Cedar Rapids','Davenport','Sioux City','Iowa City'],
   KS: ['Wichita','Overland Park','Kansas City','Topeka','Olathe'],
-  KY: ['Louisville','Lexington','Bowling Green','Owensboro'],
+  KY: ['Louisville','Lexington','Bowling Green','Owensboro','Covington'],
   LA: ['New Orleans','Baton Rouge','Shreveport','Lafayette','Lake Charles'],
-  ME: ['Portland','Lewiston','Bangor','South Portland'],
+  ME: ['Portland','Lewiston','Bangor','South Portland','Auburn'],
   MD: ['Baltimore','Frederick','Rockville','Gaithersburg','Annapolis'],
   MA: ['Boston','Worcester','Springfield','Lowell','Cambridge'],
-  MI: ['Detroit','Grand Rapids','Warren','Sterling Heights','Ann Arbor','Lansing'],
+  MI: ['Detroit','Grand Rapids','Warren','Sterling Heights','Ann Arbor'],
   MN: ['Minneapolis','Saint Paul','Rochester','Duluth','Bloomington'],
   MS: ['Jackson','Gulfport','Southaven','Hattiesburg','Biloxi'],
   MO: ['Kansas City','Saint Louis','Springfield','Columbia','Independence'],
   MT: ['Billings','Missoula','Great Falls','Bozeman','Butte'],
-  NE: ['Omaha','Lincoln','Bellevue','Grand Island'],
+  NE: ['Omaha','Lincoln','Bellevue','Grand Island','Kearney'],
   NV: ['Las Vegas','Henderson','Reno','North Las Vegas','Sparks'],
-  NH: ['Manchester','Nashua','Concord','Dover'],
-  NJ: ['Newark','Jersey City','Paterson','Elizabeth','Trenton','Camden'],
+  NH: ['Manchester','Nashua','Concord','Dover','Rochester'],
+  NJ: ['Newark','Jersey City','Paterson','Elizabeth','Trenton'],
   NM: ['Albuquerque','Las Cruces','Rio Rancho','Santa Fe','Roswell'],
-  NY: ['New York City','Buffalo','Rochester','Yonkers','Syracuse','Albany'],
-  NC: ['Charlotte','Raleigh','Greensboro','Durham','Winston-Salem','Fayetteville'],
-  ND: ['Fargo','Bismarck','Grand Forks','Minot'],
-  OH: ['Columbus','Cleveland','Cincinnati','Toledo','Akron','Dayton'],
+  NY: ['New York City','Buffalo','Rochester','Yonkers','Syracuse'],
+  NC: ['Charlotte','Raleigh','Greensboro','Durham','Winston-Salem'],
+  ND: ['Fargo','Bismarck','Grand Forks','Minot','West Fargo'],
+  OH: ['Columbus','Cleveland','Cincinnati','Toledo','Akron'],
   OK: ['Oklahoma City','Tulsa','Norman','Broken Arrow','Edmond'],
   OR: ['Portland','Eugene','Salem','Gresham','Hillsboro'],
   PA: ['Philadelphia','Pittsburgh','Allentown','Erie','Reading'],
-  RI: ['Providence','Cranston','Warwick','Pawtucket'],
+  RI: ['Providence','Cranston','Warwick','Pawtucket','East Providence'],
   SC: ['Columbia','Charleston','North Charleston','Greenville','Spartanburg'],
-  SD: ['Sioux Falls','Rapid City','Aberdeen','Brookings'],
+  SD: ['Sioux Falls','Rapid City','Aberdeen','Brookings','Watertown'],
   TN: ['Memphis','Nashville','Knoxville','Chattanooga','Clarksville'],
-  TX: ['Houston','San Antonio','Dallas','Austin','Fort Worth','El Paso','Arlington','Corpus Christi','Plano','Lubbock'],
+  TX: ['Houston','San Antonio','Dallas','Austin','Fort Worth'],
   UT: ['Salt Lake City','West Valley City','Provo','West Jordan','Orem'],
-  VT: ['Burlington','South Burlington','Rutland','Montpelier'],
-  VA: ['Virginia Beach','Norfolk','Chesapeake','Richmond','Newport News','Arlington'],
-  WA: ['Seattle','Spokane','Tacoma','Vancouver','Bellevue','Kirkland'],
-  WV: ['Charleston','Huntington','Morgantown','Parkersburg'],
+  VT: ['Burlington','South Burlington','Rutland','Montpelier','Barre'],
+  VA: ['Virginia Beach','Norfolk','Chesapeake','Richmond','Newport News'],
+  WA: ['Seattle','Spokane','Tacoma','Vancouver','Bellevue'],
+  WV: ['Charleston','Huntington','Morgantown','Parkersburg','Wheeling'],
   WI: ['Milwaukee','Madison','Green Bay','Kenosha','Racine'],
-  WY: ['Cheyenne','Casper','Laramie','Gillette'],
+  WY: ['Cheyenne','Casper','Laramie','Gillette','Rock Springs'],
 };
 
 function mapFsqPlace(p, query) {
@@ -284,6 +288,13 @@ app.get('/api/places-search', async (req, res) => {
     return res.status(400).json({ error: 'query and state are required' });
   }
 
+  const cacheKey = `${query.toLowerCase()}|${city.toLowerCase()}|${state.toUpperCase()}`;
+  const cached = searchCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < SEARCH_TTL) {
+    console.log(`[search] cache hit for "${query}" in ${city || state}`);
+    return res.json({ ...cached.data, fromCache: true });
+  }
+
   const hasFsq = !!process.env.FOURSQUARE_API_KEY;
 
   if (hasFsq) {
@@ -291,7 +302,9 @@ app.get('/api/places-search', async (req, res) => {
       console.log(`[search] using foursquare for: ${query} in ${city}, ${state}`);
       const businesses = await foursquareSearch(query, city, state);
       console.log(`[search] foursquare returned ${businesses.length} results`);
-      return res.json({ businesses, provider: 'foursquare' });
+      const fsqPayload = { businesses, provider: 'foursquare' };
+      searchCache.set(cacheKey, { data: fsqPayload, ts: Date.now() });
+      return res.json(fsqPayload);
     } catch (err) {
       console.error('[search] foursquare failed, falling back to OSM:', err.message);
     }
