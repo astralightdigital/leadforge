@@ -146,10 +146,11 @@ export default function FindLeads() {
               if ([...q.keys()].length) {
                 fetch(api(`/api/fetch-email?${q}`))
                   .then(r => r.json())
-                  .then(({ email, guessed, socials }) => {
+                  .then(({ email, guessed, socials, phone }) => {
                     const upd = {};
                     if (email) { upd.discoveredEmail = email; upd.emailGuessed = !!guessed; }
-                    if (socials && Object.values(socials).some(Boolean)) upd.socialMedia = { ...(socials) };
+                    if (socials && Object.values(socials).some(Boolean)) upd.socialMedia = socials;
+                    if (phone) upd.discoveredPhone = phone;
                     if (Object.keys(upd).length) updateDoc(doc(db, 'leads', docRef.id), upd).catch(() => {});
                   })
                   .catch(() => {});
@@ -256,10 +257,11 @@ export default function FindLeads() {
       if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
       if ([...q.keys()].length) fetch(api(`/api/fetch-email?${q}`))
         .then(r => r.json())
-        .then(({ email, guessed, socials }) => {
+        .then(({ email, guessed, socials, phone }) => {
           const upd = {};
           if (email) { upd.discoveredEmail = email; upd.emailGuessed = !!guessed; }
           if (socials && Object.values(socials).some(Boolean)) upd.socialMedia = socials;
+          if (phone) upd.discoveredPhone = phone;
           if (Object.keys(upd).length) updateDoc(doc(db, 'leads', docRef.id), upd).catch(() => {});
         })
         .catch(() => {});

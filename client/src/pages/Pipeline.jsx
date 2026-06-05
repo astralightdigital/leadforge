@@ -237,10 +237,11 @@ export default function Pipeline() {
             if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
             if (![...q.keys()].length) return;
             const res = await fetch(api(`/api/fetch-email?${q}`));
-            const { email, guessed, socials } = await res.json();
+            const { email, guessed, socials, phone } = await res.json();
             const upd = {};
             if (email) { upd.discoveredEmail = email; upd.emailGuessed = !!guessed; }
             if (socials && Object.values(socials).some(Boolean)) upd.socialMedia = socials;
+            if (phone && !lead.phone) upd.discoveredPhone = phone;
             if (Object.keys(upd).length) await updateDoc(doc(db, 'leads', lead.id), upd);
           } catch {}
         })

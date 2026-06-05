@@ -538,42 +538,74 @@ function extractEmail(html) {
   return null;
 }
 
-function extractSocials(html) {
-  if (typeof html !== 'string') return {};
-  const socials = {};
-  const SKIP = new Set(['sharer','share','dialog','photo','photos','p','reel','reels','hashtag','explore','stories','watch','shorts']);
+const SOCIAL_SKIP = new Set(['sharer','share','dialog','photo','photos','p','reel','reels',
+  'hashtag','explore','stories','watch','shorts','intent','home','login','signup',
+  'about','help','privacy','terms','ads','business','developers','plugins']);
 
-  // Find all href/src values and scan for known social domains
-  const links = html.match(/https?:\/\/(?:www\.)?(?:instagram\.com|facebook\.com|twitter\.com|x\.com|tiktok\.com|youtube\.com|snapchat\.com)\/[^\s"'<>)]+/gi) || [];
-
-  for (const raw of links) {
-    // Strip query strings and trailing slashes/punctuation
-    const link = raw.replace(/[?#].*$/, '').replace(/[/.,)]+$/, '');
-    const lower = link.toLowerCase();
-
-    if (!socials.instagram && lower.includes('instagram.com')) {
-      const m = link.match(/instagram\.com\/([A-Za-z0-9_.]+)/);
-      if (m && !SKIP.has(m[1].toLowerCase())) socials.instagram = `https://instagram.com/${m[1]}`;
-    }
-    if (!socials.facebook && lower.includes('facebook.com')) {
-      const m = link.match(/facebook\.com\/([A-Za-z0-9_.%-]+)/);
-      if (m && !SKIP.has(m[1].toLowerCase()) && !m[1].startsWith('1') && m[1].length > 2)
-        socials.facebook = `https://facebook.com/${m[1]}`;
-    }
-    if (!socials.twitter && (lower.includes('twitter.com') || lower.includes('x.com'))) {
-      const m = link.match(/(?:twitter|x)\.com\/([A-Za-z0-9_]+)/);
-      if (m && !SKIP.has(m[1].toLowerCase())) socials.twitter = `https://twitter.com/${m[1]}`;
-    }
-    if (!socials.tiktok && lower.includes('tiktok.com')) {
-      const m = link.match(/tiktok\.com\/@?([A-Za-z0-9_.]+)/);
-      if (m && !SKIP.has(m[1].toLowerCase())) socials.tiktok = `https://tiktok.com/@${m[1]}`;
-    }
-    if (!socials.youtube && lower.includes('youtube.com')) {
-      const m = link.match(/youtube\.com\/(channel|user|c|@)?([A-Za-z0-9_-]+)/);
-      if (m && m[2] && !SKIP.has(m[2].toLowerCase())) socials.youtube = link;
-    }
+function parseSocialLink(raw, socials) {
+  const link = raw.replace(/[?#].*$/, '').replace(/[/.,)'"\s]+$/, '');
+  const low  = link.toLowerCase();
+  if (!socials.instagram && low.includes('instagram.com')) {
+    const m = link.match(/instagram\.com\/([A-Za-z0-9_.]+)/);
+    if (m && !SOCIAL_SKIP.has(m[1].toLowerCase())) socials.instagram = `https://instagram.com/${m[1]}`;
   }
-  return socials;
+  if (!socials.facebook && low.includes('facebook.com')) {
+    const m = link.match(/facebook\.com\/(?:pages\/[^/]+\/)?([A-Za-z0-9_.%-]+)/);
+    if (m && !SOCIAL_SKIP.has(m[1].toLowerCase()) && !/^\d{10,}$/.test(m[1]) && m[1].length > 2)
+      socials.facebook = `https://facebook.com/${m[1]}`;
+  }
+  if (!socials.twitter && (low.includes('twitter.com') || low.includes('x.com'))) {
+    const m = link.match(/(?:twitter|x)\.com\/([A-Za-z0-9_]+)/);
+    if (m && !SOCIAL_SKIP.has(m[1].toLowerCase())) socials.twitter = `https://twitter.com/${m[1]}`;
+  }
+  if (!socials.tiktok && low.includes('tiktok.com')) {
+    const m = link.match(/tiktok\.com\/@?([A-Za-z0-9_.]+)/);
+    if (m && !SOCIAL_SKIP.has(m[1].toLowerCase())) socials.tiktok = `https://tiktok.com/@${m[1]}`;
+  }
+  if (!socials.youtube && low.includes('youtube.com')) {
+    const m = link.match(/youtube\.com\/(?:channel\/|user\/|c\/|@)?([A-Za-z0-9_@-]+)/);
+    if (m && m[1] && !SOCIAL_SKIP.has(m[1].toLowerCase())) socials.youtube = link;
+  }
+}
+
+function extractSocials(html) {
+  if (typeof html !== 'string') return { socials: {}, phone: null };
+  const socials = {};
+  let phone = null;
+
+  // Priority 1: JSON-LD sameAs — the most authoritative social link source
+  for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const traverse = obj => {
+        if (!obj || typeof obj !== 'object') return;
+        if (obj.sameAs) {
+          (Array.isArray(obj.sameAs) ? obj.sameAs : [obj.sameAs])
+            .filter(l => typeof l === 'string')
+            .forEach(l => parseSocialLink(l, socials));
+        }
+        if (obj.telephone && !phone) phone = obj.telephone;
+        Object.values(obj).forEach(traverse);
+      };
+      traverse(JSON.parse(m[1]));
+    } catch {}
+  }
+
+  // Priority 2: meta tags (twitter:creator, twitter:site)
+  for (const m of html.matchAll(/<meta[^>]*name=["']twitter:(creator|site)["'][^>]*content=["'](@?[A-Za-z0-9_]+)["']/gi)) {
+    if (!socials.twitter) socials.twitter = `https://twitter.com/${m[2].replace('@', '')}`;
+  }
+
+  // Priority 3: rel="me" (IndieWeb social identity assertions)
+  for (const m of html.matchAll(/<a[^>]+rel=["'][^"']*\bme\b[^"']*["'][^>]+href=["']([^"']+)["']/gi)) {
+    parseSocialLink(m[1], socials);
+  }
+
+  // Priority 4: generic href scan
+  for (const raw of (html.match(/https?:\/\/(?:www\.)?(?:instagram|facebook|twitter|x|tiktok|youtube|snapchat)\.com\/[^\s"'<>)]+/gi) || [])) {
+    parseSocialLink(raw, socials);
+  }
+
+  return { socials, phone };
 }
 
 async function fetchHtml(pageUrl) {
@@ -628,24 +660,34 @@ app.get('/api/fetch-email', async (req, res) => {
   }
   if (facebook) candidates.push(facebook);
 
+  // Try sitemap.xml to find real contact page URLs
+  if (url) {
+    try {
+      const origin = new URL(url).origin;
+      const sitemap = await fetchHtml(`${origin}/sitemap.xml`).catch(() => '');
+      const contactUrls = (sitemap.match(/<loc>([^<]*(?:contact|about|team|reach)[^<]*)<\/loc>/gi) || [])
+        .map(l => l.replace(/<\/?loc>/gi, '').trim())
+        .slice(0, 3);
+      contactUrls.forEach(u => { if (!candidates.includes(u)) candidates.push(u); });
+    } catch {}
+  }
+
   const htmlResults = await Promise.allSettled(candidates.map(fetchHtml));
   const allHtml = htmlResults.flatMap(r => r.status === 'fulfilled' ? [r.value] : []);
 
-  // Extract email from all pages
+  // Extract email + socials + phone from all pages
   let foundEmail = null;
-  for (const html of allHtml) {
-    const e = extractEmail(html);
-    if (e) { foundEmail = e; break; }
-  }
-
-  // Extract socials from all pages (merge results)
   const foundSocials = {};
+  let foundPhone = null;
+
   for (const html of allHtml) {
-    const s = extractSocials(html);
-    Object.assign(foundSocials, ...Object.entries(s).filter(([,v]) => v).map(([k,v]) => ({ [k]: v })));
+    if (!foundEmail) { const e = extractEmail(html); if (e) foundEmail = e; }
+    const { socials, phone } = extractSocials(html);
+    Object.entries(socials).forEach(([k, v]) => { if (v && !foundSocials[k]) foundSocials[k] = v; });
+    if (phone && !foundPhone) foundPhone = phone;
   }
 
-  if (foundEmail) return res.json({ email: foundEmail, socials: foundSocials });
+  if (foundEmail) return res.json({ email: foundEmail, socials: foundSocials, phone: foundPhone });
 
   // Last resort: guess common prefixes on the domain and verify with MX lookup
   if (url) {
@@ -658,14 +700,13 @@ app.get('/api/fetch-email', async (req, res) => {
         const dns = await import('dns').then(m => m.promises);
         const mx = await dns.resolveMx(domain).catch(() => []);
         if (mx.length > 0) {
-          return res.json({ email: domain, guessed: true, socials: foundSocials });
+          return res.json({ email: domain, guessed: true, socials: foundSocials, phone: foundPhone });
         }
       }
     } catch {}
   }
 
-  // Return any socials found even if no email
-  res.json({ email: null, socials: foundSocials });
+  res.json({ email: null, socials: foundSocials, phone: foundPhone });
 });
 
 // ── Outreach Message Generator ─────────────────────────────────────────────────
