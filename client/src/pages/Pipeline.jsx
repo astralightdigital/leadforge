@@ -120,27 +120,32 @@ export default function Pipeline() {
   }
 
   const JUNK_PATTERNS = [
-    's3.amazonaws.com','s3.','cloudfront.net','hubbiz','manta.com','yellowpages.com',
+    'amazonaws.com','cloudfront.net','hubbiz','manta.com','yellowpages.com',
     'yelp.com','chamberofcommerce.com','alignable.com','thumbtack.com','bark.com',
     'homeadvisor.com','houzz.com','facebook.com','instagram.com','twitter.com',
-    'tiktok.com','maps.google.com','goo.gl','amazonaws.com','bizhub',
+    'tiktok.com','maps.google.com','goo.gl','bizhub',
   ];
   const JUNK_EXT = ['.jpg','.jpeg','.png','.gif','.webp','.svg','.pdf'];
 
   function isJunkUrl(url) {
     if (!url) return false;
-    // Decode URL-encoding (e.g. %2F%2F → //) before checking
+    // Decode all percent-encoding (%2F → /, %40 → @, etc.)
     let decoded = url;
     try { decoded = decodeURIComponent(url); } catch {}
+    // Also try replacing %2F manually in case decodeURIComponent fails
+    decoded = decoded.replace(/%2F/gi, '/').replace(/%3A/gi, ':').replace(/%40/gi, '@');
     const lower = decoded.toLowerCase();
-    return JUNK_PATTERNS.some(p => lower.includes(p)) ||
-           JUNK_EXT.some(e => lower.split('?')[0].endsWith(e));
+    // Protocol-relative URLs (starting with //) are never real business sites
+    if (decoded.startsWith('//')) return true;
+    if (JUNK_PATTERNS.some(p => lower.includes(p))) return true;
+    if (JUNK_EXT.some(e => lower.split('?')[0].endsWith(e))) return true;
+    return false;
   }
 
   async function fixJunkUrls() {
     const toFix = leads.filter(l => isJunkUrl(l.websiteUrl));
-    console.log('[fixJunkUrls] found:', toFix.length, toFix.map(l => l.websiteUrl));
-    if (!toFix.length) { showToast('No junk URLs found'); return; }
+    if (!toFix.length) { showToast('No junk URLs found — check console for details'); console.log('All websiteUrls:', leads.map(l => l.websiteUrl).filter(Boolean)); return; }
+    showToast(`Fixing ${toFix.length} junk URLs…`);
 
     setSyncing(true);
     setSyncProgress({ done: 0, total: toFix.length });
