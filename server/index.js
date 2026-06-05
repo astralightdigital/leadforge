@@ -233,13 +233,15 @@ const STATE_HUBS = {
 
 // Domains that appear in FSQ's website field but aren't actual business websites
 const JUNK_WEBSITE_PATTERNS = [
-  's3.amazonaws.com', 'cloudfront.net', 'hubbiz', 'manta.com',
-  'yellowpages.com', 'yelp.com', 'chamberofcommerce.com', 'alignable.com',
-  'thumbtack.com', 'bark.com', 'homeadvisor.com', 'houzz.com',
-  'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com',
-  'maps.google.com', 'goo.gl',
+  's3.amazonaws.com', 'cloudfront.net', 'amazonaws.com',
+  'hubbiz', 'hub.biz', 'manta.com', 'yellowpages.com', 'yelp.com',
+  'chamberofcommerce.com', 'alignable.com', 'thumbtack.com', 'bark.com',
+  'homeadvisor.com', 'houzz.com', 'facebook.com', 'instagram.com',
+  'twitter.com', 'tiktok.com', 'maps.google.com', 'goo.gl',
+  'poi.place', 'bizhub',
 ];
 const JUNK_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.pdf'];
+const IMAGE_TLDS = new Set(['jpg','jpeg','png','gif','webp','svg','pdf']);
 
 function sanitizeWebsite(url) {
   if (!url) return null;
@@ -247,8 +249,9 @@ function sanitizeWebsite(url) {
     const lower = url.toLowerCase();
     if (JUNK_WEBSITE_PATTERNS.some(p => lower.includes(p))) return null;
     if (JUNK_EXTENSIONS.some(e => lower.split('?')[0].endsWith(e))) return null;
-    // Must look like a real URL
-    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+    // Must start with http — reject protocol-relative (//) and encoded (%2F) URLs
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+    const parsed = new URL(url);
     if (!parsed.hostname.includes('.')) return null;
     return parsed.href;
   } catch {
@@ -465,7 +468,15 @@ function extractEmail(html) {
   if (typeof html !== 'string') return null;
 
   function clean(e) {
-    return e && !EMAIL_BLACKLIST.some(d => e.toLowerCase().includes(d)) ? e : null;
+    if (!e) return null;
+    if (!e.includes('@')) return null;
+    if (EMAIL_BLACKLIST.some(d => e.toLowerCase().includes(d))) return null;
+    // Reject if TLD looks like an image/file extension (e.g. heartburn.jpg)
+    const tld = e.split('.').pop().toLowerCase().split('?')[0];
+    if (IMAGE_TLDS.has(tld)) return null;
+    // Must look like a real email: word@word.tld
+    if (!/^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(e)) return null;
+    return e;
   }
 
   // 1. mailto: href (most reliable — it's intentionally placed)
