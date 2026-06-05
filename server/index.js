@@ -290,6 +290,15 @@ async function foursquareSearch(query, city, state) {
   });
 }
 
+app.get('/api/clear-cache', (req, res) => {
+  const sc = searchCache.size;
+  const gc = geocodeCache.size;
+  searchCache.clear();
+  geocodeCache.clear();
+  console.log(`[cache] cleared ${sc} search + ${gc} geocode entries`);
+  res.json({ cleared: { search: sc, geocode: gc } });
+});
+
 app.get('/api/places-search', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const { query, city = '', state } = req.query;
