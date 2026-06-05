@@ -404,11 +404,13 @@ app.get('/api/place-socials', async (req, res) => {
         Accept: 'application/json',
         'X-Places-Api-Version': '2025-06-17',
       },
-      params: { fields: 'social_media' },
+      params: { fields: 'social_media,email' },
       timeout: 8000,
     });
     const sm = response.data.social_media || {};
+    const fsqEmail = response.data.email || null;
     res.json({
+      email: fsqEmail,
       socialMedia: {
         instagram: sm.instagram   ? `https://instagram.com/${sm.instagram}`  : null,
         facebook:  sm.facebook_id ? `https://facebook.com/${sm.facebook_id}` : null,
@@ -436,8 +438,37 @@ const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
 
 function extractEmail(html) {
   if (typeof html !== 'string') return null;
-  const matches = html.match(EMAIL_RE) || [];
-  return matches.find(e => !EMAIL_BLACKLIST.some(d => e.toLowerCase().includes(d))) || null;
+
+  function clean(e) {
+    return e && !EMAIL_BLACKLIST.some(d => e.toLowerCase().includes(d)) ? e : null;
+  }
+
+  // 1. mailto: href (most reliable — it's intentionally placed)
+  const mailtoMatch = html.match(/mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i);
+  if (mailtoMatch) { const e = clean(mailtoMatch[1]); if (e) return e; }
+
+  // 2. JSON-LD structured data (schema.org LocalBusiness often has email)
+  for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const traverse = obj => {
+        if (!obj || typeof obj !== 'object') return null;
+        if (typeof obj.email === 'string') return obj.email.replace(/^mailto:/i, '').trim();
+        for (const v of Object.values(obj)) { const f = traverse(v); if (f) return f; }
+        return null;
+      };
+      const e = clean(traverse(JSON.parse(m[1])));
+      if (e) return e;
+    } catch {}
+  }
+
+  // 3. Deobfuscate common patterns before regex scan
+  const deob = html
+    .replace(/\[at\]/gi, '@').replace(/\(at\)/gi, '@').replace(/\bat\b/g, '@')
+    .replace(/\[dot\]/gi, '.').replace(/\(dot\)/gi, '.');
+  const e = (deob.match(EMAIL_RE) || []).map(clean).find(Boolean);
+  if (e) return e;
+
+  return null;
 }
 
 async function fetchHtml(pageUrl) {
@@ -454,22 +485,44 @@ async function fetchHtml(pageUrl) {
 }
 
 app.get('/api/fetch-email', async (req, res) => {
-  const { url, facebook } = req.query;
-  if (!url && !facebook) return res.json({ email: null });
+  const { url, facebook, fsqId } = req.query;
+  if (!url && !facebook && !fsqId) return res.json({ email: null });
 
-  // Build candidate pages: website homepage + common contact paths + Facebook
+  // Priority 1: FSQ place data (structured, authoritative)
+  if (fsqId && !fsqId.startsWith('osm-') && process.env.FOURSQUARE_API_KEY) {
+    try {
+      const r = await axios.get(`https://places-api.foursquare.com/places/${fsqId}`, {
+        headers: {
+          Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
+          Accept: 'application/json',
+          'X-Places-Api-Version': '2025-06-17',
+        },
+        params: { fields: 'email' },
+        timeout: 6000,
+      });
+      const fsqEmail = r.data.email;
+      if (fsqEmail && !EMAIL_BLACKLIST.some(d => fsqEmail.toLowerCase().includes(d))) {
+        return res.json({ email: fsqEmail, source: 'foursquare' });
+      }
+    } catch {}
+  }
+
+  // Priority 2: Scrape website pages + Facebook in parallel
   const candidates = [];
   if (url) {
     try {
       const origin = new URL(url).origin;
-      candidates.push(url, `${origin}/contact`, `${origin}/about`, `${origin}/contact-us`, `${origin}/about-us`);
-    } catch {
-      candidates.push(url);
-    }
+      candidates.push(
+        url,
+        `${origin}/contact`, `${origin}/contact-us`, `${origin}/contactus`,
+        `${origin}/about`,   `${origin}/about-us`,
+        `${origin}/reach-us`,`${origin}/get-in-touch`,
+        `${origin}/team`,    `${origin}/staff`,
+      );
+    } catch { candidates.push(url); }
   }
   if (facebook) candidates.push(facebook);
 
-  // Fetch all candidates in parallel, return first email found
   const results = await Promise.allSettled(
     candidates.map(async pageUrl => {
       const html = await fetchHtml(pageUrl);

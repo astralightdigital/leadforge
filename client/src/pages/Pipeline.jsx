@@ -111,8 +111,8 @@ export default function Pipeline() {
   }
 
   async function rescanEmails() {
-    const toScan = leads.filter(l => !l.discoveredEmail && (l.websiteUrl || l.socialMedia?.facebook));
-    if (!toScan.length) { showToast('No leads missing emails to scan'); return; }
+    const toScan = leads.filter(l => !l.discoveredEmail);
+    if (!toScan.length) { showToast('All leads already have emails'); return; }
 
     setSyncing(true);
     setSyncProgress({ done: 0, total: toScan.length });
@@ -123,8 +123,10 @@ export default function Pipeline() {
         toScan.slice(i, i + BATCH).map(async lead => {
           try {
             const q = new URLSearchParams();
+            if (lead.fsqId && !lead.fsqId.startsWith('osm-')) q.set('fsqId', lead.fsqId);
             if (lead.websiteUrl)            q.set('url',      lead.websiteUrl);
             if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
+            if (![...q.keys()].length) return;
             const res = await fetch(api(`/api/fetch-email?${q}`));
             const { email } = await res.json();
             if (email) await updateDoc(doc(db, 'leads', lead.id), { discoveredEmail: email });
