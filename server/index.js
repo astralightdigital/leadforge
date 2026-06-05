@@ -382,6 +382,35 @@ app.get('/api/places-search', async (req, res) => {
   }
 });
 
+// ── FSQ Place Social Media Lookup ─────────────────────────────────────────────
+app.get('/api/place-socials', async (req, res) => {
+  const { fsqId } = req.query;
+  if (!fsqId || fsqId.startsWith('osm-') || !process.env.FOURSQUARE_API_KEY) {
+    return res.json({ socialMedia: {} });
+  }
+  try {
+    const response = await axios.get(`https://places-api.foursquare.com/places/${fsqId}`, {
+      headers: {
+        Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
+        Accept: 'application/json',
+        'X-Places-Api-Version': '2025-06-17',
+      },
+      params: { fields: 'social_media' },
+      timeout: 8000,
+    });
+    const sm = response.data.social_media || {};
+    res.json({
+      socialMedia: {
+        instagram: sm.instagram ? `https://instagram.com/${sm.instagram}` : null,
+        facebook:  sm.facebook_id ? `https://facebook.com/${sm.facebook_id}` : null,
+        twitter:   sm.twitter ? `https://twitter.com/${sm.twitter}` : null,
+      },
+    });
+  } catch {
+    res.json({ socialMedia: {} });
+  }
+});
+
 // ── Email Extractor ────────────────────────────────────────────────────────────
 app.get('/api/fetch-email', async (req, res) => {
   const { url } = req.query;

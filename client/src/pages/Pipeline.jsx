@@ -35,6 +35,8 @@ export default function Pipeline() {
   const [msgModal, setMsgModal]         = useState(null);
   const [copied, setCopied]             = useState(false);
   const [colModal, setColModal]         = useState(false);
+  const [syncing, setSyncing]           = useState(false);
+  const [syncProgress, setSyncProgress] = useState(null);
 
   // ── Filtering ──────────────────────────────────────────────────────────────
   function toggleRating(score) {
@@ -98,6 +100,38 @@ export default function Pipeline() {
     showToast('Lead deleted', 'error');
   }
 
+  async function syncSocials() {
+    const toSync = leads.filter(l =>
+      l.fsqId && !l.fsqId.startsWith('osm-') &&
+      !Object.values(l.socialMedia || {}).some(Boolean)
+    );
+    if (!toSync.length) { showToast('All FSQ leads already synced'); return; }
+
+    setSyncing(true);
+    setSyncProgress({ done: 0, total: toSync.length });
+
+    const BATCH = 5;
+    for (let i = 0; i < toSync.length; i += BATCH) {
+      await Promise.all(
+        toSync.slice(i, i + BATCH).map(async lead => {
+          try {
+            const res  = await fetch(api(`/api/place-socials?fsqId=${lead.fsqId}`));
+            const { socialMedia } = await res.json();
+            if (Object.values(socialMedia).some(Boolean)) {
+              await updateDoc(doc(db, 'leads', lead.id), { socialMedia });
+            }
+          } catch {}
+        })
+      );
+      setSyncProgress({ done: Math.min(i + BATCH, toSync.length), total: toSync.length });
+      if (i + BATCH < toSync.length) await new Promise(r => setTimeout(r, 350));
+    }
+
+    setSyncing(false);
+    setSyncProgress(null);
+    showToast('Social media sync complete');
+  }
+
   async function addNote(leadId) {
     const text = (noteInputs[leadId] || '').trim();
     if (!text) return;
@@ -155,7 +189,16 @@ export default function Pipeline() {
             {sorted.length} of {leads.length} lead{leads.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={syncSocials}
+            disabled={syncing}
+            className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {syncing
+              ? `Syncing ${syncProgress?.done}/${syncProgress?.total}…`
+              : 'Sync Socials'}
+          </button>
           <button
             onClick={() => setColModal(true)}
             className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
