@@ -252,8 +252,10 @@ export default function Pipeline() {
 
   async function syncSocials() {
     const toSync = leads.filter(l =>
-      l.fsqId && !l.fsqId.startsWith('osm-') &&
-      !Object.values(l.socialMedia || {}).some(Boolean)
+      l.fsqId && !l.fsqId.startsWith('osm-') && (
+        !Object.values(l.socialMedia || {}).some(Boolean) ||
+        l.lat == null || l.lng == null
+      )
     );
     if (!toSync.length) { showToast('All FSQ leads already synced'); return; }
 
@@ -265,11 +267,13 @@ export default function Pipeline() {
       await Promise.all(
         toSync.slice(i, i + BATCH).map(async lead => {
           try {
-            const res  = await fetch(api(`/api/place-socials?fsqId=${lead.fsqId}`));
-            const { socialMedia } = await res.json();
-            if (Object.values(socialMedia).some(Boolean)) {
-              await updateDoc(doc(db, 'leads', lead.id), { socialMedia });
-            }
+            const res = await fetch(api(`/api/place-socials?fsqId=${lead.fsqId}`));
+            const { socialMedia, lat, lng } = await res.json();
+            const update = {};
+            if (Object.values(socialMedia || {}).some(Boolean)) update.socialMedia = socialMedia;
+            if (lat != null && lead.lat == null) update.lat = lat;
+            if (lng != null && lead.lng == null) update.lng = lng;
+            if (Object.keys(update).length) await updateDoc(doc(db, 'leads', lead.id), update);
           } catch {}
         })
       );
@@ -279,7 +283,7 @@ export default function Pipeline() {
 
     setSyncing(false);
     setSyncProgress(null);
-    showToast('Social media sync complete');
+    showToast('Sync complete');
   }
 
   async function addNote(leadId) {

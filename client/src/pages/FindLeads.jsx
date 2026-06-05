@@ -31,7 +31,9 @@ export default function FindLeads() {
   const [addedIds, setAddedIds] = useState(new Set());
   const sortOrder = 'quality';
   const [isFallback, setIsFallback] = useState(false);
-  const [requireContact, setRequireContact] = useState(false);
+  const [requirePhone,   setRequirePhone]   = useState(false);
+  const [requireSocial,  setRequireSocial]  = useState(false);
+  const [requireEmail,   setRequireEmail]   = useState(false);
 
   // US Bulk Scan
   const [showUSScan, setShowUSScan]     = useState(false);
@@ -258,9 +260,12 @@ export default function FindLeads() {
     }
   }
 
-  const displayResults = requireContact
-    ? results.filter(b => b.phone || b.websiteUrl || Object.values(b.socialMedia || {}).some(Boolean))
-    : results;
+  const displayResults = results.filter(b => {
+    if (requirePhone  && !b.phone) return false;
+    if (requireSocial && !Object.values(b.socialMedia || {}).some(Boolean)) return false;
+    if (requireEmail  && !b.discoveredEmail) return false;
+    return true;
+  });
 
   const sorted = [...displayResults].sort((a, b) => {
     if (sortOrder === 'score') return b.leadScore - a.leadScore;
@@ -335,15 +340,16 @@ export default function FindLeads() {
           >
             + Add another search
           </button>
-          <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-600 ml-2">
-            <input
-              type="checkbox"
-              checked={requireContact}
-              onChange={e => setRequireContact(e.target.checked)}
-              className="w-4 h-4 rounded accent-teal-600"
-            />
-            Has contact info
-          </label>
+          {[
+            { label: 'Has Phone',  state: requirePhone,  set: setRequirePhone },
+            { label: 'Has Social', state: requireSocial, set: setRequireSocial },
+            { label: 'Has Email',  state: requireEmail,  set: setRequireEmail },
+          ].map(({ label, state, set }) => (
+            <label key={label} className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-slate-600">
+              <input type="checkbox" checked={state} onChange={e => set(e.target.checked)} className="w-4 h-4 rounded accent-teal-600" />
+              {label}
+            </label>
+          ))}
           <button
             onClick={runSearches}
             disabled={loading}
@@ -466,7 +472,7 @@ export default function FindLeads() {
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-slate-600">
               <span className="font-medium">{displayResults.length}</span>
-              {requireContact && displayResults.length < results.length && (
+              {displayResults.length < results.length && (
                 <span className="text-slate-400"> of {results.length}</span>
               )}
               {' '}results ·{' '}

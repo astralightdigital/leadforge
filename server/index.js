@@ -454,13 +454,15 @@ app.get('/api/place-socials', async (req, res) => {
         Accept: 'application/json',
         'X-Places-Api-Version': '2025-06-17',
       },
-      params: { fields: 'social_media,email' },
+      params: { fields: 'social_media,email,geocodes' },
       timeout: 8000,
     });
-    const sm = response.data.social_media || {};
-    const fsqEmail = response.data.email || null;
+    const sm  = response.data.social_media || {};
+    const geo = response.data.geocodes?.main || {};
     res.json({
-      email: fsqEmail,
+      email: response.data.email || null,
+      lat:   geo.latitude  || null,
+      lng:   geo.longitude || null,
       socialMedia: {
         instagram: sm.instagram   ? `https://instagram.com/${sm.instagram}`  : null,
         facebook:  sm.facebook_id ? `https://facebook.com/${sm.facebook_id}` : null,
