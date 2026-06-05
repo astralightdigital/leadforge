@@ -171,23 +171,64 @@ async function nominatimFallback(query, city, state, res) {
   }
 }
 
-async function foursquareSearch(query, city, state) {
-  // Use FSQ's built-in `near` geocoding — avoids Nominatim entirely and works
-  // correctly for state-only searches (no city) by finding populated areas.
-  const near = city.trim() ? `${city.trim()}, ${state}, USA` : `${state}, USA`;
+// Major population centers per state — used for state-wide searches so results
+// aren't limited to a single geocoded point.
+const STATE_HUBS = {
+  AL: ['Birmingham','Montgomery','Huntsville','Mobile'],
+  AK: ['Anchorage','Fairbanks','Juneau'],
+  AZ: ['Phoenix','Tucson','Mesa','Chandler','Scottsdale','Tempe'],
+  AR: ['Little Rock','Fayetteville','Fort Smith','Jonesboro'],
+  CA: ['Los Angeles','San Diego','San Jose','San Francisco','Fresno','Sacramento','Oakland','Long Beach'],
+  CO: ['Denver','Colorado Springs','Aurora','Fort Collins','Lakewood'],
+  CT: ['Bridgeport','New Haven','Hartford','Stamford','Waterbury'],
+  DC: ['Washington'],
+  DE: ['Wilmington','Dover','Newark'],
+  FL: ['Jacksonville','Miami','Tampa','Orlando','St. Petersburg','Fort Lauderdale','Tallahassee'],
+  GA: ['Atlanta','Augusta','Columbus','Macon','Savannah','Athens'],
+  HI: ['Honolulu','Pearl City','Hilo','Kailua'],
+  ID: ['Boise','Nampa','Meridian','Idaho Falls','Pocatello'],
+  IL: ['Chicago','Aurora','Rockford','Joliet','Naperville','Peoria','Springfield'],
+  IN: ['Indianapolis','Fort Wayne','Evansville','South Bend','Carmel'],
+  IA: ['Des Moines','Cedar Rapids','Davenport','Sioux City','Iowa City'],
+  KS: ['Wichita','Overland Park','Kansas City','Topeka','Olathe'],
+  KY: ['Louisville','Lexington','Bowling Green','Owensboro'],
+  LA: ['New Orleans','Baton Rouge','Shreveport','Lafayette','Lake Charles'],
+  ME: ['Portland','Lewiston','Bangor','South Portland'],
+  MD: ['Baltimore','Frederick','Rockville','Gaithersburg','Annapolis'],
+  MA: ['Boston','Worcester','Springfield','Lowell','Cambridge'],
+  MI: ['Detroit','Grand Rapids','Warren','Sterling Heights','Ann Arbor','Lansing'],
+  MN: ['Minneapolis','Saint Paul','Rochester','Duluth','Bloomington'],
+  MS: ['Jackson','Gulfport','Southaven','Hattiesburg','Biloxi'],
+  MO: ['Kansas City','Saint Louis','Springfield','Columbia','Independence'],
+  MT: ['Billings','Missoula','Great Falls','Bozeman','Butte'],
+  NE: ['Omaha','Lincoln','Bellevue','Grand Island'],
+  NV: ['Las Vegas','Henderson','Reno','North Las Vegas','Sparks'],
+  NH: ['Manchester','Nashua','Concord','Dover'],
+  NJ: ['Newark','Jersey City','Paterson','Elizabeth','Trenton','Camden'],
+  NM: ['Albuquerque','Las Cruces','Rio Rancho','Santa Fe','Roswell'],
+  NY: ['New York City','Buffalo','Rochester','Yonkers','Syracuse','Albany'],
+  NC: ['Charlotte','Raleigh','Greensboro','Durham','Winston-Salem','Fayetteville'],
+  ND: ['Fargo','Bismarck','Grand Forks','Minot'],
+  OH: ['Columbus','Cleveland','Cincinnati','Toledo','Akron','Dayton'],
+  OK: ['Oklahoma City','Tulsa','Norman','Broken Arrow','Edmond'],
+  OR: ['Portland','Eugene','Salem','Gresham','Hillsboro'],
+  PA: ['Philadelphia','Pittsburgh','Allentown','Erie','Reading'],
+  RI: ['Providence','Cranston','Warwick','Pawtucket'],
+  SC: ['Columbia','Charleston','North Charleston','Greenville','Spartanburg'],
+  SD: ['Sioux Falls','Rapid City','Aberdeen','Brookings'],
+  TN: ['Memphis','Nashville','Knoxville','Chattanooga','Clarksville'],
+  TX: ['Houston','San Antonio','Dallas','Austin','Fort Worth','El Paso','Arlington','Corpus Christi','Plano','Lubbock'],
+  UT: ['Salt Lake City','West Valley City','Provo','West Jordan','Orem'],
+  VT: ['Burlington','South Burlington','Rutland','Montpelier'],
+  VA: ['Virginia Beach','Norfolk','Chesapeake','Richmond','Newport News','Arlington'],
+  WA: ['Seattle','Spokane','Tacoma','Vancouver','Bellevue','Kirkland'],
+  WV: ['Charleston','Huntington','Morgantown','Parkersburg'],
+  WI: ['Milwaukee','Madison','Green Bay','Kenosha','Racine'],
+  WY: ['Cheyenne','Casper','Laramie','Gillette'],
+};
 
-  const response = await axios.get('https://places-api.foursquare.com/places/search', {
-    headers: {
-      Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
-      Accept: 'application/json',
-      'X-Places-Api-Version': '2025-06-17',
-    },
-    params: { query, near, limit: 50 },
-  });
-
-  const allRaw = response.data.results || [];
-
-  const mapPlace = p => ({
+function mapFsqPlace(p, query) {
+  return {
     fsqId:         p.fsq_place_id,
     businessName:  p.name,
     address:       [p.location?.address, p.location?.locality, p.location?.region, p.location?.postcode].filter(Boolean).join(', '),
@@ -198,9 +239,42 @@ async function foursquareSearch(query, city, state) {
     websiteUrl:    p.website || null,
     businessType:  p.categories?.[0]?.name || query,
     foursquareUrl: p.link || null,
-  });
+  };
+}
 
-  return allRaw.map(mapPlace);
+async function fsqSearchNear(query, near) {
+  const response = await axios.get('https://places-api.foursquare.com/places/search', {
+    headers: {
+      Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
+      Accept: 'application/json',
+      'X-Places-Api-Version': '2025-06-17',
+    },
+    params: { query, near, limit: 50 },
+  });
+  return (response.data.results || []).map(p => mapFsqPlace(p, query));
+}
+
+async function foursquareSearch(query, city, state) {
+  if (city.trim()) {
+    // City-level search — single FSQ call
+    return fsqSearchNear(query, `${city.trim()}, ${state}, USA`);
+  }
+
+  // State-wide search — query all major hubs in parallel and deduplicate
+  const hubs = STATE_HUBS[state];
+  if (!hubs) return fsqSearchNear(query, `${state}, USA`);
+
+  console.log(`[search] state-wide FSQ: querying ${hubs.length} hubs in ${state}`);
+  const batches = await Promise.all(
+    hubs.map(hub => fsqSearchNear(query, `${hub}, ${state}, USA`).catch(() => []))
+  );
+
+  const seen = new Set();
+  return batches.flat().filter(b => {
+    if (seen.has(b.fsqId)) return false;
+    seen.add(b.fsqId);
+    return true;
+  });
 }
 
 app.get('/api/places-search', async (req, res) => {
