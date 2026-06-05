@@ -643,7 +643,8 @@ function LeadRow({
                   {lead.discoveredEmail}
                 </a>
               ) : (
-                <a href={`mailto:${lead.discoveredEmail}`}
+                <a href={`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(lead.discoveredEmail)}`}
+                  target="_blank" rel="noreferrer"
                   className="text-blue-600 hover:underline block truncate max-w-[160px]">
                   {lead.discoveredEmail}
                 </a>
