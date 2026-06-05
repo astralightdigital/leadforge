@@ -231,6 +231,31 @@ const STATE_HUBS = {
   WY: ['Cheyenne','Casper','Laramie','Gillette','Rock Springs'],
 };
 
+// Domains that appear in FSQ's website field but aren't actual business websites
+const JUNK_WEBSITE_PATTERNS = [
+  's3.amazonaws.com', 'cloudfront.net', 'hubbiz', 'manta.com',
+  'yellowpages.com', 'yelp.com', 'chamberofcommerce.com', 'alignable.com',
+  'thumbtack.com', 'bark.com', 'homeadvisor.com', 'houzz.com',
+  'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com',
+  'maps.google.com', 'goo.gl',
+];
+const JUNK_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.pdf'];
+
+function sanitizeWebsite(url) {
+  if (!url) return null;
+  try {
+    const lower = url.toLowerCase();
+    if (JUNK_WEBSITE_PATTERNS.some(p => lower.includes(p))) return null;
+    if (JUNK_EXTENSIONS.some(e => lower.split('?')[0].endsWith(e))) return null;
+    // Must look like a real URL
+    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+    if (!parsed.hostname.includes('.')) return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
 function mapFsqPlace(p, query) {
   const sm = p.social_media || {};
   return {
@@ -241,7 +266,7 @@ function mapFsqPlace(p, query) {
     lat:           p.geocodes?.main?.latitude  || null,
     lng:           p.geocodes?.main?.longitude || null,
     phone:         p.tel  || null,
-    websiteUrl:    p.website || null,
+    websiteUrl:    sanitizeWebsite(p.website),
     businessType:  p.categories?.[0]?.name || query,
     foursquareUrl: p.link || null,
     socialMedia: {
