@@ -415,6 +415,7 @@ export default function Pipeline() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
                   <Th>Business</Th>
+                  <Th>Website</Th>
                   <Th>Site Quality</Th>
                   <Th sortable onClick={() => toggleSort('leadScore')}>
                     Score{sortIndicator('leadScore')}
@@ -505,6 +506,19 @@ function LeadRow({
           <p className="text-xs text-slate-500 mt-0.5">{lead.businessType} · {lead.city}</p>
         </td>
 
+        {/* Website */}
+        <td className="px-4 py-3 text-xs max-w-[180px]">
+          {lead.websiteUrl ? (
+            <a href={lead.websiteUrl} target="_blank" rel="noreferrer"
+              className="text-blue-600 hover:underline truncate block"
+              title={lead.websiteUrl}>
+              {lead.websiteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+            </a>
+          ) : (
+            <span className="text-red-400 font-medium">No website</span>
+          )}
+        </td>
+
         {/* Site quality */}
         <td className="px-4 py-3">
           <SiteQualityBadge quality={lead.siteQuality} />
@@ -578,7 +592,7 @@ function LeadRow({
       {/* Expanded detail row */}
       {expanded && (
         <tr>
-          <td colSpan={8} className="px-4 py-5 bg-slate-50 border-t border-b border-slate-200">
+          <td colSpan={9} className="px-4 py-5 bg-slate-50 border-t border-b border-slate-200">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
               {/* Left: Details + Outreach */}
