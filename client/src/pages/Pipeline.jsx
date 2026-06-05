@@ -120,22 +120,26 @@ export default function Pipeline() {
   }
 
   const JUNK_PATTERNS = [
-    's3.amazonaws.com','cloudfront.net','hubbiz','manta.com','yellowpages.com',
+    's3.amazonaws.com','s3.','cloudfront.net','hubbiz','manta.com','yellowpages.com',
     'yelp.com','chamberofcommerce.com','alignable.com','thumbtack.com','bark.com',
     'homeadvisor.com','houzz.com','facebook.com','instagram.com','twitter.com',
-    'tiktok.com','maps.google.com','goo.gl',
+    'tiktok.com','maps.google.com','goo.gl','amazonaws.com','bizhub',
   ];
   const JUNK_EXT = ['.jpg','.jpeg','.png','.gif','.webp','.svg','.pdf'];
 
   function isJunkUrl(url) {
     if (!url) return false;
-    const lower = url.toLowerCase();
+    // Decode URL-encoding (e.g. %2F%2F → //) before checking
+    let decoded = url;
+    try { decoded = decodeURIComponent(url); } catch {}
+    const lower = decoded.toLowerCase();
     return JUNK_PATTERNS.some(p => lower.includes(p)) ||
            JUNK_EXT.some(e => lower.split('?')[0].endsWith(e));
   }
 
   async function fixJunkUrls() {
     const toFix = leads.filter(l => isJunkUrl(l.websiteUrl));
+    console.log('[fixJunkUrls] found:', toFix.length, toFix.map(l => l.websiteUrl));
     if (!toFix.length) { showToast('No junk URLs found'); return; }
 
     setSyncing(true);
