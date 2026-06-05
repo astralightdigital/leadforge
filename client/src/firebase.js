@@ -1,13 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 
+// Firebase client config is intentionally public — safe to have in source code.
+// See: https://firebase.google.com/docs/projects/api-keys
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey:            "AIzaSyAvlbR82lKSicijD5CZY50ohgv0zhLaMuQ",
+  authDomain:        "leadforge-leads-2026.firebaseapp.com",
+  projectId:         "leadforge-leads-2026",
+  storageBucket:     "leadforge-leads-2026.firebasestorage.app",
+  messagingSenderId: "227757291697",
+  appId:             "1:227757291697:web:c7fa9f44f67ca9b0938a90",
 };
 
 const app = initializeApp(firebaseConfig);

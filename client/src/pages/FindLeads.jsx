@@ -123,6 +123,7 @@ export default function FindLeads() {
       siteQuality:      lead.siteQuality,
       leadScore:        lead.leadScore,
       foursquareUrl:    lead.foursquareUrl || null,
+      socialMedia:      lead.socialMedia || {},
       discoveredEmail:  null,
       status:           'Not Contacted',
       contactedAt:      null,
@@ -304,6 +305,24 @@ function LeadCard({ lead, added, onAdd }) {
               <a href={lead.foursquareUrl} target="_blank" rel="noreferrer"
                 className="text-slate-400 hover:text-slate-600">
                 Foursquare ↗
+              </a>
+            )}
+            {lead.socialMedia?.instagram && (
+              <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer"
+                className="text-pink-500 hover:text-pink-700">
+                Instagram ↗
+              </a>
+            )}
+            {lead.socialMedia?.facebook && (
+              <a href={lead.socialMedia.facebook} target="_blank" rel="noreferrer"
+                className="text-blue-500 hover:text-blue-700">
+                Facebook ↗
+              </a>
+            )}
+            {lead.socialMedia?.twitter && (
+              <a href={lead.socialMedia.twitter} target="_blank" rel="noreferrer"
+                className="text-sky-500 hover:text-sky-700">
+                X/Twitter ↗
               </a>
             )}
           </div>

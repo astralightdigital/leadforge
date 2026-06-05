@@ -232,6 +232,7 @@ const STATE_HUBS = {
 };
 
 function mapFsqPlace(p, query) {
+  const sm = p.social_media || {};
   return {
     fsqId:         p.fsq_place_id,
     businessName:  p.name,
@@ -243,6 +244,11 @@ function mapFsqPlace(p, query) {
     websiteUrl:    p.website || null,
     businessType:  p.categories?.[0]?.name || query,
     foursquareUrl: p.link || null,
+    socialMedia: {
+      instagram: sm.instagram ? `https://instagram.com/${sm.instagram}` : null,
+      facebook:  sm.facebook_id ? `https://facebook.com/${sm.facebook_id}` : null,
+      twitter:   sm.twitter ? `https://twitter.com/${sm.twitter}` : null,
+    },
   };
 }
 
@@ -253,7 +259,10 @@ async function fsqSearchNear(query, near) {
       Accept: 'application/json',
       'X-Places-Api-Version': '2025-06-17',
     },
-    params: { query, near, limit: 50 },
+    params: {
+      query, near, limit: 50,
+      fields: 'fsq_place_id,name,location,categories,geocodes,tel,website,social_media,link,latitude,longitude',
+    },
   });
   return (response.data.results || []).map(p => mapFsqPlace(p, query));
 }

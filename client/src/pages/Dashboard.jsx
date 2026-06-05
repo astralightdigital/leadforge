@@ -33,7 +33,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-8 max-w-7xl">
+    <div className="p-4 md:p-8 max-w-7xl">
       <h2 className="text-2xl font-bold text-slate-800 mb-6">Dashboard</h2>
 
       {/* Stats */}

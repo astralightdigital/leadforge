@@ -12,7 +12,20 @@
       "PowerShell(npm list *)",
       "PowerShell(gh *)",
       "PowerShell(winget install *)",
-      "PowerShell(npm install *)"
+      "PowerShell(npm install *)",
+      "PowerShell(cmdkey *)",
+      "Bash(ssh-keygen -t ed25519 -C \"leadforge-deploy\" -f ~/.ssh/leadforge_key -N \"\")",
+      "Read(//c/Users/jblue/.ssh/**)",
+      "Bash(npm run *)",
+      "Bash(firebase deploy *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git commit -m 'Fix outreach links: Instagram/Facebook go to page search instead of DM *)",
+      "Bash(git commit -m 'Remove Google Places API entirely — only Foursquare + free OSM *)",
+      "Bash(git commit -m 'Fix FSQ cursor path, log pagination to diagnose 50-result cap *)",
+      "Bash(git commit -m 'Remove dead pagination loop — FSQ free plan hard-caps at 50 *)"
     ]
   }
 }

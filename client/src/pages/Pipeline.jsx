@@ -26,7 +26,7 @@ const SCORE_OPTIONS = [
 
 export default function Pipeline() {
   const { leads, loading } = useLeads();
-  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '', ratings: [] });
+  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '', ratings: [], contact: '' });
   const [showRatingFilter, setShowRatingFilter] = useState(false);
   const [sortBy, setSortBy]   = useState('dateAdded');
   const [sortDir, setSortDir] = useState('desc');
@@ -52,6 +52,13 @@ export default function Pipeline() {
     if (filters.city    && !l.city?.toLowerCase().includes(filters.city.toLowerCase())) return false;
     if (filters.type    && !l.businessType?.toLowerCase().includes(filters.type.toLowerCase())) return false;
     if (filters.ratings.length > 0 && !filters.ratings.includes(l.leadScore)) return false;
+    if (filters.contact) {
+      const hasSocial = Object.values(l.socialMedia || {}).some(Boolean);
+      if (filters.contact === 'hasEmail'  && !l.discoveredEmail) return false;
+      if (filters.contact === 'hasPhone'  && !l.phone) return false;
+      if (filters.contact === 'hasSocial' && !hasSocial) return false;
+      if (filters.contact === 'noContact' && (l.discoveredEmail || l.phone || hasSocial)) return false;
+    }
     return true;
   });
 
@@ -137,7 +144,7 @@ export default function Pipeline() {
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div className="p-8 text-slate-400 text-sm">Loading pipeline…</div>;
 
-  const hasFilters = filters.status || filters.quality || filters.city || filters.type || filters.ratings.length > 0;
+  const hasFilters = filters.status || filters.quality || filters.city || filters.type || filters.ratings.length > 0 || filters.contact;
 
   return (
     <div className="p-4 md:p-8">
@@ -202,6 +209,18 @@ export default function Pipeline() {
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
         />
 
+        <select
+          value={filters.contact}
+          onChange={e => setFilters(f => ({ ...f, contact: e.target.value }))}
+          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+        >
+          <option value="">All Contact Info</option>
+          <option value="hasEmail">Has Email</option>
+          <option value="hasPhone">Has Phone</option>
+          <option value="hasSocial">Has Social</option>
+          <option value="noContact">No Contact Info</option>
+        </select>
+
         {/* Rating toggle */}
         <button
           onClick={() => setShowRatingFilter(prev => !prev)}
@@ -217,7 +236,7 @@ export default function Pipeline() {
 
         {hasFilters && (
           <button
-            onClick={() => { setFilters({ status: '', quality: '', city: '', type: '', ratings: [] }); setShowRatingFilter(false); }}
+            onClick={() => { setFilters({ status: '', quality: '', city: '', type: '', ratings: [], contact: '' }); setShowRatingFilter(false); }}
             className="text-sm text-red-400 hover:text-red-600"
           >
             Clear filters
@@ -443,6 +462,28 @@ function LeadRow({
                         className="text-xs text-slate-400 hover:underline">
                         View on Foursquare ↗
                       </a>
+                    )}
+                    {(lead.socialMedia?.instagram || lead.socialMedia?.facebook || lead.socialMedia?.twitter) && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {lead.socialMedia.instagram && (
+                          <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer"
+                            className="text-xs text-pink-500 hover:underline">
+                            Instagram ↗
+                          </a>
+                        )}
+                        {lead.socialMedia.facebook && (
+                          <a href={lead.socialMedia.facebook} target="_blank" rel="noreferrer"
+                            className="text-xs text-blue-500 hover:underline">
+                            Facebook ↗
+                          </a>
+                        )}
+                        {lead.socialMedia.twitter && (
+                          <a href={lead.socialMedia.twitter} target="_blank" rel="noreferrer"
+                            className="text-xs text-sky-500 hover:underline">
+                            X/Twitter ↗
+                          </a>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
