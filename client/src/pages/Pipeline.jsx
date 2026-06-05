@@ -564,10 +564,18 @@ function LeadRow({
           <div className="space-y-0.5">
             {lead.phone && <p className="text-slate-700">{lead.phone}</p>}
             {lead.discoveredEmail ? (
-              <a href={`mailto:${lead.discoveredEmail}`} className="text-blue-600 hover:underline block truncate max-w-[160px]">
-                {lead.discoveredEmail}
-                {lead.emailGuessed && <span className="text-slate-400 text-[10px] ml-1">?</span>}
-              </a>
+              lead.emailGuessed ? (
+                <a href={`https://${lead.discoveredEmail}`} target="_blank" rel="noreferrer"
+                  className="text-amber-600 hover:underline block truncate max-w-[160px]"
+                  title="Website domain only — no email found">
+                  {lead.discoveredEmail}
+                </a>
+              ) : (
+                <a href={`mailto:${lead.discoveredEmail}`}
+                  className="text-blue-600 hover:underline block truncate max-w-[160px]">
+                  {lead.discoveredEmail}
+                </a>
+              )
             ) : (
               <span className="text-slate-400">No email found</span>
             )}

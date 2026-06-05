@@ -546,8 +546,8 @@ app.get('/api/fetch-email', async (req, res) => {
         const dns = await import('dns').then(m => m.promises);
         const mx = await dns.resolveMx(domain).catch(() => []);
         if (mx.length > 0) {
-          // Domain accepts email — return best-guess, flagged as unverified
-          return res.json({ email: `info@${domain}`, guessed: true });
+          // Domain accepts email — return just the domain, flagged as guessed
+          return res.json({ email: domain, guessed: true });
         }
       }
     } catch {}
