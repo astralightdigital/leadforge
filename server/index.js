@@ -419,6 +419,28 @@ app.get('/api/places-search', async (req, res) => {
   }
 });
 
+// ── FSQ Place Status (closed_bucket) ──────────────────────────────────────────
+app.get('/api/place-status', async (req, res) => {
+  const { fsqId } = req.query;
+  if (!fsqId || fsqId.startsWith('osm-') || !process.env.FOURSQUARE_API_KEY) {
+    return res.json({ status: 'unknown' });
+  }
+  try {
+    const response = await axios.get(`https://places-api.foursquare.com/places/${fsqId}`, {
+      headers: {
+        Authorization: `Bearer ${process.env.FOURSQUARE_API_KEY}`,
+        Accept: 'application/json',
+        'X-Places-Api-Version': '2025-06-17',
+      },
+      params: { fields: 'closed_bucket,name' },
+      timeout: 6000,
+    });
+    res.json({ status: response.data.closed_bucket || 'unknown', name: response.data.name });
+  } catch {
+    res.json({ status: 'unknown' });
+  }
+});
+
 // ── FSQ Place Social Media Lookup ─────────────────────────────────────────────
 app.get('/api/place-socials', async (req, res) => {
   const { fsqId } = req.query;

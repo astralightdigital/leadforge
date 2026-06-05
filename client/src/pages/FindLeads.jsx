@@ -31,6 +31,7 @@ export default function FindLeads() {
   const [addedIds, setAddedIds] = useState(new Set());
   const sortOrder = 'quality';
   const [isFallback, setIsFallback] = useState(false);
+  const [requireContact, setRequireContact] = useState(false);
 
   // US Bulk Scan
   const [showUSScan, setShowUSScan]     = useState(false);
@@ -257,7 +258,11 @@ export default function FindLeads() {
     }
   }
 
-  const sorted = [...results].sort((a, b) => {
+  const displayResults = requireContact
+    ? results.filter(b => b.phone || b.websiteUrl || Object.values(b.socialMedia || {}).some(Boolean))
+    : results;
+
+  const sorted = [...displayResults].sort((a, b) => {
     if (sortOrder === 'score') return b.leadScore - a.leadScore;
     return QUALITY_ORDER[a.siteQuality] - QUALITY_ORDER[b.siteQuality] || b.leadScore - a.leadScore;
   });
@@ -330,6 +335,15 @@ export default function FindLeads() {
           >
             + Add another search
           </button>
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-600 ml-2">
+            <input
+              type="checkbox"
+              checked={requireContact}
+              onChange={e => setRequireContact(e.target.checked)}
+              className="w-4 h-4 rounded accent-teal-600"
+            />
+            Has contact info
+          </label>
           <button
             onClick={runSearches}
             disabled={loading}
@@ -451,7 +465,11 @@ export default function FindLeads() {
         <>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-slate-600">
-              <span className="font-medium">{results.length}</span> results ·{' '}
+              <span className="font-medium">{displayResults.length}</span>
+              {requireContact && displayResults.length < results.length && (
+                <span className="text-slate-400"> of {results.length}</span>
+              )}
+              {' '}results ·{' '}
               <span className="text-teal-600 font-medium">{addedIds.size}</span> added to pipeline
             </p>
           </div>

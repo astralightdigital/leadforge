@@ -38,6 +38,7 @@ export default function Pipeline() {
   const [colModal, setColModal]         = useState(false);
   const [syncing, setSyncing]           = useState(false);
   const [syncProgress, setSyncProgress] = useState(null);
+  const [closedModal, setClosedModal]   = useState(null); // list of closed leads
 
   // ── Filtering ──────────────────────────────────────────────────────────────
   function toggleRating(score) {
@@ -117,6 +118,42 @@ export default function Pipeline() {
     await deleteDoc(doc(db, 'leads', id));
     if (expandedId === id) setExpandedId(null);
     showToast('Lead deleted', 'error');
+  }
+
+  async function findClosed() {
+    const fsqLeads = leads.filter(l => l.fsqId && !l.fsqId.startsWith('osm-'));
+    if (!fsqLeads.length) { showToast('No FSQ leads to check'); return; }
+    setSyncing(true);
+    setSyncProgress({ done: 0, total: fsqLeads.length });
+
+    const closed = [];
+    const BATCH = 5;
+    for (let i = 0; i < fsqLeads.length; i += BATCH) {
+      await Promise.all(
+        fsqLeads.slice(i, i + BATCH).map(async lead => {
+          try {
+            const res = await fetch(api(`/api/place-status?fsqId=${lead.fsqId}`));
+            const { status } = await res.json();
+            if (status === 'VeryLikelyClosed' || status === 'LikelyClosed') {
+              closed.push({ ...lead, closedStatus: status });
+            }
+          } catch {}
+        })
+      );
+      setSyncProgress({ done: Math.min(i + BATCH, fsqLeads.length), total: fsqLeads.length });
+      await new Promise(r => setTimeout(r, 150));
+    }
+
+    setSyncing(false);
+    setSyncProgress(null);
+    if (!closed.length) showToast('All checked — no closed businesses found');
+    else setClosedModal(closed);
+  }
+
+  async function deleteClosedLeads(closedLeads) {
+    await Promise.all(closedLeads.map(l => deleteDoc(doc(db, 'leads', l.id))));
+    setClosedModal(null);
+    showToast(`Removed ${closedLeads.length} closed businesses`, 'error');
   }
 
   async function fixJunkUrls() {
@@ -303,6 +340,13 @@ export default function Pipeline() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={findClosed}
+            disabled={syncing}
+            className="border border-red-200 hover:border-red-300 bg-white text-red-500 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {syncing && syncProgress ? `Checking ${syncProgress.done}/${syncProgress.total}…` : 'Find Closed'}
+          </button>
           <button
             onClick={fixJunkUrls}
             disabled={syncing}
@@ -555,6 +599,42 @@ export default function Pipeline() {
           onClose={() => setColModal(false)}
           onCopied={() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }}
         />
+      )}
+
+      {/* Closed businesses modal */}
+      {closedModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="font-semibold text-slate-800">Closed Businesses Found</h3>
+              <button onClick={() => setClosedModal(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-500 mb-4">
+                {closedModal.length} business{closedModal.length !== 1 ? 'es' : ''} flagged as permanently closed by Foursquare:
+              </p>
+              <div className="max-h-64 overflow-y-auto space-y-2 mb-6">
+                {closedModal.map(lead => (
+                  <div key={lead.id} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-800">{lead.businessName}</span>
+                    <span className="text-xs text-red-500">{lead.closedStatus === 'VeryLikelyClosed' ? 'Closed' : 'Likely Closed'}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => deleteClosedLeads(closedModal)}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white rounded-lg py-2 text-sm font-medium transition-colors"
+                >
+                  Remove All {closedModal.length} from Pipeline
+                </button>
+                <button onClick={() => setClosedModal(null)} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">
+                  Keep
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
