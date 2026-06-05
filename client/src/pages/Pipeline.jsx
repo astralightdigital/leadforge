@@ -255,29 +255,47 @@ export default function Pipeline() {
   }
 
   async function fixCoords() {
-    // Fix OSM leads missing coordinates by geocoding their address
-    const osmMissing = leads.filter(l => l.fsqId?.startsWith('osm-') && (l.lat == null || l.lng == null) && l.address);
-    if (!osmMissing.length) { showToast('No OSM leads missing coordinates'); return; }
+    const missing = leads.filter(l => l.lat == null || l.lng == null);
+    if (!missing.length) { showToast('All leads already have coordinates'); return; }
+
     setSyncing(true);
-    setSyncProgress({ done: 0, total: osmMissing.length });
-    const BATCH = 3;
-    for (let i = 0; i < osmMissing.length; i += BATCH) {
-      await Promise.all(osmMissing.slice(i, i + BATCH).map(async lead => {
+    setSyncProgress({ done: 0, total: missing.length });
+    let fixed = 0;
+
+    const BATCH = 5;
+    for (let i = 0; i < missing.length; i += BATCH) {
+      await Promise.all(missing.slice(i, i + BATCH).map(async lead => {
         try {
-          const q = encodeURIComponent(lead.address);
-          const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`, {
-            headers: { 'User-Agent': 'LeadForge/1.0' }
-          });
-          const data = await r.json();
-          if (data[0]) await updateDoc(doc(db, 'leads', lead.id), { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+          if (lead.fsqId && !lead.fsqId.startsWith('osm-') && process.env.NODE_ENV !== 'test') {
+            // FSQ lead — fetch geocodes from place details
+            const res = await fetch(api(`/api/place-socials?fsqId=${lead.fsqId}`));
+            const { lat, lng } = await res.json();
+            if (lat != null && lng != null) {
+              await updateDoc(doc(db, 'leads', lead.id), { lat, lng });
+              fixed++;
+            } else if (lead.address) {
+              // FSQ had no coords — fallback to address geocoding
+              const q = encodeURIComponent(lead.address);
+              const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`);
+              const data = await r.json();
+              if (data[0]) { await updateDoc(doc(db, 'leads', lead.id), { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }); fixed++; }
+            }
+          } else if (lead.address) {
+            // OSM lead — geocode by address
+            const q = encodeURIComponent(lead.address);
+            const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`);
+            const data = await r.json();
+            if (data[0]) { await updateDoc(doc(db, 'leads', lead.id), { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }); fixed++; }
+          }
         } catch {}
       }));
-      setSyncProgress({ done: Math.min(i + BATCH, osmMissing.length), total: osmMissing.length });
-      await new Promise(r => setTimeout(r, 1100)); // Nominatim 1 req/sec limit
+      setSyncProgress({ done: Math.min(i + BATCH, missing.length), total: missing.length });
+      await new Promise(r => setTimeout(r, 400));
     }
+
     setSyncing(false);
     setSyncProgress(null);
-    showToast(`Fixed coordinates for ${osmMissing.length} OSM leads`);
+    showToast(`Fixed ${fixed} of ${missing.length} missing coordinates`);
   }
 
   async function syncSocials() {
