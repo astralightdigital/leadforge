@@ -429,6 +429,8 @@ const EMAIL_BLACKLIST = [
   'w3.org','schema.org','wixpress.com','squarespace.com','shopify.com',
   'googleapis.com','gstatic.com','facebook.com','instagram.com','twitter.com',
   'tiktok.com','youtube.com','apple.com','microsoft.com','adobe.com',
+  'bizhub.com','manta.com','yelp.com','yellowpages.com','thumbtack.com',
+  'wix.com','godaddy.com','weebly.com','business.site','sites.google.com',
 ];
 const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
 

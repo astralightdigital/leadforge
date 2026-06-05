@@ -3,12 +3,22 @@ const FREE_SUBDOMAINS = [
   '.weebly.com', '.godaddysites.com', '.jimdofree.com',
   '.strikingly.com', '.carrd.co', '.webnode.com', '.site123.me',
   '.webstarts.com', '.yolasite.com',
+  // Google free business sites
+  '.business.site',
+  // Directory / listing platforms used as "websites"
+  'bizhub.com', 'manta.com', 'chamberofcommerce.com',
+  'yellowpages.com', 'yelp.com', 'alignable.com',
+  'thumbtack.com', 'bark.com', 'homeadvisor.com', 'houzz.com',
+  // Free site builders
+  '.place', 'sites.google.com', '.mystrikingly.com',
+  '.wordpress.com', '.blogspot.com',
 ];
 
 const BUILDER_SIGNALS = [
   'wix.com', 'squarespace.com', 'godaddy.com', 'weebly.com',
   'jimdo.com', 'strikingly.com', 'wordpress.com', 'blogspot.',
   'tumblr.com', 'webflow.io', 'mystrikingly.com',
+  'business.site', 'sites.google.com',
 ];
 
 export function getSiteQuality(url) {
