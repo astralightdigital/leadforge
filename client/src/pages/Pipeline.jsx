@@ -123,38 +123,38 @@ export default function Pipeline() {
     setSyncing(true);
     setSyncProgress({ done: 0, total: '…' });
 
-    // Query Firestore directly — bypasses React state entirely
-    const snapshot = await getDocs(collection(db, 'leads'));
-    const toFix = [];
-    snapshot.forEach(docSnap => {
-      const url = docSnap.data().websiteUrl;
-      if (!url) return;
-      const low = url.toLowerCase();
-      const bad = (
-        (!url.startsWith('http://') && !url.startsWith('https://')) ||
-        low.includes('amazonaws') || low.includes('hubbiz') ||
-        low.includes('cloudfront') || low.includes('manta.com') ||
-        low.includes('yellowpages') || low.includes('bizhub') ||
-        low.includes('alignable') || low.includes('s3.') ||
-        /\.(jpg|jpeg|png|gif|webp|svg|pdf)(\?|$)/.test(low)
-      );
-      if (bad) toFix.push(docSnap.id);
-    });
+    try {
+      const snapshot = await getDocs(collection(db, 'leads'));
+      const toFix = [];
 
-    if (!toFix.length) {
-      setSyncing(false);
-      setSyncProgress(null);
-      showToast('No junk URLs found');
-      return;
+      snapshot.forEach(docSnap => {
+        const url = docSnap.data().websiteUrl;
+        if (!url) return;
+        const low = url.toLowerCase();
+        const bad = (
+          (!url.startsWith('http://') && !url.startsWith('https://')) ||
+          low.includes('amazonaws') || low.includes('hubbiz') ||
+          low.includes('cloudfront') || low.includes('manta.com') ||
+          low.includes('yellowpages') || low.includes('bizhub') ||
+          low.includes('alignable') || low.includes('s3.') ||
+          low.includes('.poi.place') || low.includes('poi.place') ||
+          /\.(jpg|jpeg|png|gif|webp|svg|pdf)(\?|$)/.test(low)
+        );
+        if (bad) toFix.push(docSnap.id);
+      });
+
+      if (toFix.length > 0) {
+        const b = writeBatch(db);
+        toFix.forEach(id => b.update(doc(db, 'leads', id), { websiteUrl: null, siteQuality: 'none', leadScore: 5 }));
+        await b.commit();
+        showToast(`Fixed ${toFix.length} junk URLs`);
+      }
+    } catch (err) {
+      alert('Error: ' + err.message);
     }
-
-    const b = writeBatch(db);
-    toFix.forEach(id => b.update(doc(db, 'leads', id), { websiteUrl: null, siteQuality: 'none', leadScore: 5 }));
-    await b.commit();
 
     setSyncing(false);
     setSyncProgress(null);
-    showToast(`Fixed ${toFix.length} junk URLs`);
   }
 
   async function rescanEmails() {
