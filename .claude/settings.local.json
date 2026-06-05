@@ -25,7 +25,8 @@
       "Bash(git commit -m 'Fix outreach links: Instagram/Facebook go to page search instead of DM *)",
       "Bash(git commit -m 'Remove Google Places API entirely — only Foursquare + free OSM *)",
       "Bash(git commit -m 'Fix FSQ cursor path, log pagination to diagnose 50-result cap *)",
-      "Bash(git commit -m 'Remove dead pagination loop — FSQ free plan hard-caps at 50 *)"
+      "Bash(git commit -m 'Remove dead pagination loop — FSQ free plan hard-caps at 50 *)",
+      "WebFetch(domain:leadforge-fnnh.onrender.com)"
     ]
   }
 }

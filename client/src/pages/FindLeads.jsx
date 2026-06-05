@@ -32,6 +32,17 @@ export default function FindLeads() {
   const sortOrder = 'quality';
   const [isFallback, setIsFallback] = useState(false);
 
+  // US Bulk Scan
+  const [showUSScan, setShowUSScan]     = useState(false);
+  const [scanTerm, setScanTerm]         = useState('');
+  const [scanScore, setScanScore]       = useState(4);
+  const [scanning, setScanning]         = useState(false);
+  const [scanProgress, setScanProgress] = useState(null); // { state, done, total, found }
+  const [scanResults, setScanResults]   = useState([]);
+  const [bulkAdding, setBulkAdding]     = useState(false);
+  const [bulkAddedCount, setBulkAddedCount] = useState(0);
+  const scanAbortRef = useRef(false);
+
   // Pre-fill from dashboard quick search
   useEffect(() => {
     if (location.state?.prefillTerm || location.state?.prefillCity) {
@@ -53,6 +64,93 @@ export default function FindLeads() {
 
   function updateRow(i, field, value) {
     setSearches(prev => prev.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)));
+  }
+
+  async function runUSScan() {
+    const term = scanTerm.trim();
+    if (!term) return;
+    scanAbortRef.current = false;
+    setScanning(true);
+    setScanResults([]);
+    setBulkAddedCount(0);
+
+    const accumulated = [];
+    const seenIds = new Set([...existingFsqIds]);
+
+    for (let i = 0; i < STATES.length; i++) {
+      if (scanAbortRef.current) break;
+      const state = STATES[i];
+      setScanProgress({ state, done: i, total: STATES.length, found: accumulated.length });
+      try {
+        const res  = await fetch(api(`/api/places-search?query=${encodeURIComponent(term)}&city=&state=${encodeURIComponent(state)}`));
+        const data = await res.json();
+        const hits = (data.businesses || [])
+          .map(b => ({
+            ...b,
+            businessType: term,
+            phone:        formatPhone(b.phone),
+            siteQuality:  getSiteQuality(b.websiteUrl),
+            leadScore:    calculateLeadScore(b.websiteUrl),
+          }))
+          .filter(b => b.leadScore === scanScore && !seenIds.has(b.fsqId));
+        hits.forEach(b => seenIds.add(b.fsqId));
+        accumulated.push(...hits);
+      } catch {}
+    }
+
+    setScanProgress(p => ({ ...p, done: STATES.length, found: accumulated.length, complete: true }));
+    setScanResults(accumulated);
+    setScanning(false);
+  }
+
+  async function bulkAddToFirestore() {
+    if (!scanResults.length) return;
+    setBulkAdding(true);
+    setBulkAddedCount(0);
+
+    const BATCH = 5;
+    for (let i = 0; i < scanResults.length; i += BATCH) {
+      await Promise.all(
+        scanResults.slice(i, i + BATCH).map(async lead => {
+          try {
+            const docData = {
+              fsqId:           lead.fsqId,
+              businessName:    lead.businessName,
+              businessType:    lead.businessType,
+              city:            lead.city,
+              address:         lead.address,
+              lat:             lead.lat,
+              lng:             lead.lng,
+              phone:           lead.phone || null,
+              websiteUrl:      lead.websiteUrl || null,
+              siteQuality:     lead.siteQuality,
+              leadScore:       lead.leadScore,
+              foursquareUrl:   lead.foursquareUrl || null,
+              socialMedia:     lead.socialMedia || {},
+              discoveredEmail: null,
+              status:          'Not Contacted',
+              contactedAt:     null,
+              notes:           [],
+              generatedMessages: {},
+              dateAdded:       new Date().toISOString(),
+            };
+            const docRef = await addDoc(collection(db, 'leads'), docData);
+            if (lead.websiteUrl) {
+              fetch(api(`/api/fetch-email?url=${encodeURIComponent(lead.websiteUrl)}`))
+                .then(r => r.json())
+                .then(({ email }) => { if (email) updateDoc(doc(db, 'leads', docRef.id), { discoveredEmail: email }).catch(() => {}); })
+                .catch(() => {});
+            }
+          } catch {}
+        })
+      );
+      setBulkAddedCount(Math.min(i + BATCH, scanResults.length));
+    }
+
+    setBulkAdding(false);
+    showToast(`${scanResults.length} leads added to pipeline`);
+    setScanResults([]);
+    setScanProgress(null);
   }
 
   async function runSearches() {
@@ -232,6 +330,104 @@ export default function FindLeads() {
         </div>
 
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      </div>
+
+      {/* US Bulk Scan */}
+      <div className="bg-white rounded-xl border border-slate-200 mb-6 overflow-hidden">
+        <button
+          onClick={() => setShowUSScan(p => !p)}
+          className="flex items-center justify-between w-full px-6 py-4 text-left"
+        >
+          <div>
+            <p className="font-semibold text-slate-700 text-sm">US Bulk Scan</p>
+            <p className="text-xs text-slate-400">Search all 50 states and auto-add matching leads to pipeline</p>
+          </div>
+          <span className="text-slate-400 text-xs">{showUSScan ? '▲' : '▼'}</span>
+        </button>
+
+        {showUSScan && (
+          <div className="px-6 pb-6 border-t border-slate-100 pt-4 space-y-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="text"
+                placeholder="Business type (e.g. nail salon)"
+                value={scanTerm}
+                onChange={e => setScanTerm(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !scanning && runUSScan()}
+                disabled={scanning}
+                className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50"
+              />
+              <select
+                value={scanScore}
+                onChange={e => setScanScore(Number(e.target.value))}
+                disabled={scanning}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50"
+              >
+                <option value={5}>Score 5 — No website</option>
+                <option value={4}>Score 4 — Free builder</option>
+                <option value={3}>Score 3 — DIY builder</option>
+                <option value={2}>Score 2 — Non-.com</option>
+              </select>
+              {scanning ? (
+                <button
+                  onClick={() => { scanAbortRef.current = true; }}
+                  className="bg-red-500 hover:bg-red-600 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors"
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  onClick={runUSScan}
+                  disabled={!scanTerm.trim()}
+                  className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors"
+                >
+                  Scan All US
+                </button>
+              )}
+            </div>
+
+            {/* Progress */}
+            {scanProgress && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    {scanProgress.complete
+                      ? `Complete — ${scanProgress.found} score-${scanScore} leads found across all states`
+                      : `Scanning ${scanProgress.state}… (${scanProgress.done + 1}/${scanProgress.total})`}
+                  </span>
+                  <span className="font-medium text-teal-600">{scanProgress.found} found</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2">
+                  <div
+                    className="bg-teal-500 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${(scanProgress.done / scanProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Results + bulk add */}
+            {scanResults.length > 0 && (
+              <div className="flex items-center justify-between bg-teal-50 border border-teal-200 rounded-xl px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-teal-800">
+                    {scanResults.length} score-{scanScore} leads ready
+                  </p>
+                  <p className="text-xs text-teal-600">None of these are already in your pipeline</p>
+                </div>
+                <button
+                  onClick={bulkAddToFirestore}
+                  disabled={bulkAdding}
+                  className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap"
+                >
+                  {bulkAdding
+                    ? `Adding ${bulkAddedCount}/${scanResults.length}…`
+                    : `Add All ${scanResults.length} to Pipeline`}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Results */}
