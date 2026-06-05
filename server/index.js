@@ -262,10 +262,7 @@ async function fsqSearchNear(query, near) {
       Accept: 'application/json',
       'X-Places-Api-Version': '2025-06-17',
     },
-    params: {
-      query, near, limit: 50,
-      fields: 'fsq_place_id,name,location,categories,geocodes,tel,website,social_media,link',
-    },
+    params: { query, near, limit: 50 },
   });
   return (response.data.results || []).map(p => mapFsqPlace(p, query));
 }
