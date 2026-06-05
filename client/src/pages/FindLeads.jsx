@@ -146,7 +146,12 @@ export default function FindLeads() {
               if ([...q.keys()].length) {
                 fetch(api(`/api/fetch-email?${q}`))
                   .then(r => r.json())
-                  .then(({ email, guessed }) => { if (email) updateDoc(doc(db, 'leads', docRef.id), { discoveredEmail: email, emailGuessed: !!guessed }).catch(() => {}); })
+                  .then(({ email, guessed, socials }) => {
+                    const upd = {};
+                    if (email) { upd.discoveredEmail = email; upd.emailGuessed = !!guessed; }
+                    if (socials && Object.values(socials).some(Boolean)) upd.socialMedia = { ...(socials) };
+                    if (Object.keys(upd).length) updateDoc(doc(db, 'leads', docRef.id), upd).catch(() => {});
+                  })
                   .catch(() => {});
               }
             }
@@ -251,10 +256,11 @@ export default function FindLeads() {
       if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
       if ([...q.keys()].length) fetch(api(`/api/fetch-email?${q}`))
         .then(r => r.json())
-        .then(({ email }) => {
-          if (email) {
-            updateDoc(doc(db, 'leads', docRef.id), { discoveredEmail: email, emailGuessed: !!guessed }).catch(() => {});
-          }
+        .then(({ email, guessed, socials }) => {
+          const upd = {};
+          if (email) { upd.discoveredEmail = email; upd.emailGuessed = !!guessed; }
+          if (socials && Object.values(socials).some(Boolean)) upd.socialMedia = socials;
+          if (Object.keys(upd).length) updateDoc(doc(db, 'leads', docRef.id), upd).catch(() => {});
         })
         .catch(() => {});
     }

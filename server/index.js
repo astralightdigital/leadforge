@@ -538,6 +538,44 @@ function extractEmail(html) {
   return null;
 }
 
+function extractSocials(html) {
+  if (typeof html !== 'string') return {};
+  const socials = {};
+  const SKIP = new Set(['sharer','share','dialog','photo','photos','p','reel','reels','hashtag','explore','stories','watch','shorts']);
+
+  // Find all href/src values and scan for known social domains
+  const links = html.match(/https?:\/\/(?:www\.)?(?:instagram\.com|facebook\.com|twitter\.com|x\.com|tiktok\.com|youtube\.com|snapchat\.com)\/[^\s"'<>)]+/gi) || [];
+
+  for (const raw of links) {
+    // Strip query strings and trailing slashes/punctuation
+    const link = raw.replace(/[?#].*$/, '').replace(/[/.,)]+$/, '');
+    const lower = link.toLowerCase();
+
+    if (!socials.instagram && lower.includes('instagram.com')) {
+      const m = link.match(/instagram\.com\/([A-Za-z0-9_.]+)/);
+      if (m && !SKIP.has(m[1].toLowerCase())) socials.instagram = `https://instagram.com/${m[1]}`;
+    }
+    if (!socials.facebook && lower.includes('facebook.com')) {
+      const m = link.match(/facebook\.com\/([A-Za-z0-9_.%-]+)/);
+      if (m && !SKIP.has(m[1].toLowerCase()) && !m[1].startsWith('1') && m[1].length > 2)
+        socials.facebook = `https://facebook.com/${m[1]}`;
+    }
+    if (!socials.twitter && (lower.includes('twitter.com') || lower.includes('x.com'))) {
+      const m = link.match(/(?:twitter|x)\.com\/([A-Za-z0-9_]+)/);
+      if (m && !SKIP.has(m[1].toLowerCase())) socials.twitter = `https://twitter.com/${m[1]}`;
+    }
+    if (!socials.tiktok && lower.includes('tiktok.com')) {
+      const m = link.match(/tiktok\.com\/@?([A-Za-z0-9_.]+)/);
+      if (m && !SKIP.has(m[1].toLowerCase())) socials.tiktok = `https://tiktok.com/@${m[1]}`;
+    }
+    if (!socials.youtube && lower.includes('youtube.com')) {
+      const m = link.match(/youtube\.com\/(channel|user|c|@)?([A-Za-z0-9_-]+)/);
+      if (m && m[2] && !SKIP.has(m[2].toLowerCase())) socials.youtube = link;
+    }
+  }
+  return socials;
+}
+
 async function fetchHtml(pageUrl) {
   const resp = await axios.get(pageUrl, {
     timeout: 8000,
@@ -590,17 +628,24 @@ app.get('/api/fetch-email', async (req, res) => {
   }
   if (facebook) candidates.push(facebook);
 
-  const results = await Promise.allSettled(
-    candidates.map(async pageUrl => {
-      const html = await fetchHtml(pageUrl);
-      const email = extractEmail(html);
-      if (!email) throw new Error('no email');
-      return email;
-    })
-  );
+  const htmlResults = await Promise.allSettled(candidates.map(fetchHtml));
+  const allHtml = htmlResults.flatMap(r => r.status === 'fulfilled' ? [r.value] : []);
 
-  const found = results.find(r => r.status === 'fulfilled');
-  if (found) return res.json({ email: found.value });
+  // Extract email from all pages
+  let foundEmail = null;
+  for (const html of allHtml) {
+    const e = extractEmail(html);
+    if (e) { foundEmail = e; break; }
+  }
+
+  // Extract socials from all pages (merge results)
+  const foundSocials = {};
+  for (const html of allHtml) {
+    const s = extractSocials(html);
+    Object.assign(foundSocials, ...Object.entries(s).filter(([,v]) => v).map(([k,v]) => ({ [k]: v })));
+  }
+
+  if (foundEmail) return res.json({ email: foundEmail, socials: foundSocials });
 
   // Last resort: guess common prefixes on the domain and verify with MX lookup
   if (url) {
@@ -613,14 +658,14 @@ app.get('/api/fetch-email', async (req, res) => {
         const dns = await import('dns').then(m => m.promises);
         const mx = await dns.resolveMx(domain).catch(() => []);
         if (mx.length > 0) {
-          // Domain accepts email — return just the domain, flagged as guessed
-          return res.json({ email: domain, guessed: true });
+          return res.json({ email: domain, guessed: true, socials: foundSocials });
         }
       }
     } catch {}
   }
 
-  res.json({ email: null });
+  // Return any socials found even if no email
+  res.json({ email: null, socials: foundSocials });
 });
 
 // ── Outreach Message Generator ─────────────────────────────────────────────────
