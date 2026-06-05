@@ -283,6 +283,8 @@ function mapFsqPlace(p, query) {
   };
 }
 
+const CLOSED_BUCKETS = new Set(['VeryLikelyClosed', 'LikelyClosed']);
+
 async function fsqSearchNear(query, near) {
   const response = await axios.get('https://places-api.foursquare.com/places/search', {
     headers: {
@@ -290,9 +292,14 @@ async function fsqSearchNear(query, near) {
       Accept: 'application/json',
       'X-Places-Api-Version': '2025-06-17',
     },
-    params: { query, near, limit: 50 },
+    params: {
+      query, near, limit: 50,
+      fields: 'name,location,categories,geocodes,tel,website,link,social_media,closed_bucket',
+    },
   });
-  return (response.data.results || []).map(p => mapFsqPlace(p, query));
+  return (response.data.results || [])
+    .filter(p => !CLOSED_BUCKETS.has(p.closed_bucket))  // drop permanently closed
+    .map(p => mapFsqPlace(p, query));
 }
 
 async function foursquareSearch(query, city, state) {
