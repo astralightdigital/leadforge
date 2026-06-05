@@ -307,24 +307,12 @@ function LeadCard({ lead, added, onAdd }) {
                 Foursquare ↗
               </a>
             )}
-            {lead.socialMedia?.instagram && (
-              <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer"
-                className="text-pink-500 hover:text-pink-700">
-                Instagram ↗
-              </a>
-            )}
-            {lead.socialMedia?.facebook && (
-              <a href={lead.socialMedia.facebook} target="_blank" rel="noreferrer"
-                className="text-blue-500 hover:text-blue-700">
-                Facebook ↗
-              </a>
-            )}
-            {lead.socialMedia?.twitter && (
-              <a href={lead.socialMedia.twitter} target="_blank" rel="noreferrer"
-                className="text-sky-500 hover:text-sky-700">
-                X/Twitter ↗
-              </a>
-            )}
+            {lead.socialMedia?.instagram && <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer" className="text-pink-500 hover:text-pink-700">Instagram ↗</a>}
+            {lead.socialMedia?.facebook  && <a href={lead.socialMedia.facebook}  target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700">Facebook ↗</a>}
+            {lead.socialMedia?.twitter   && <a href={lead.socialMedia.twitter}   target="_blank" rel="noreferrer" className="text-sky-500 hover:text-sky-700">X/Twitter ↗</a>}
+            {lead.socialMedia?.tiktok    && <a href={lead.socialMedia.tiktok}    target="_blank" rel="noreferrer" className="text-slate-800 hover:text-slate-600">TikTok ↗</a>}
+            {lead.socialMedia?.snapchat  && <a href={lead.socialMedia.snapchat}  target="_blank" rel="noreferrer" className="text-yellow-500 hover:text-yellow-700">Snapchat ↗</a>}
+            {lead.socialMedia?.youtube   && <a href={lead.socialMedia.youtube}   target="_blank" rel="noreferrer" className="text-red-500 hover:text-red-700">YouTube ↗</a>}
           </div>
         </div>
       </div>

@@ -245,9 +245,12 @@ function mapFsqPlace(p, query) {
     businessType:  p.categories?.[0]?.name || query,
     foursquareUrl: p.link || null,
     socialMedia: {
-      instagram: sm.instagram ? `https://instagram.com/${sm.instagram}` : null,
-      facebook:  sm.facebook_id ? `https://facebook.com/${sm.facebook_id}` : null,
-      twitter:   sm.twitter ? `https://twitter.com/${sm.twitter}` : null,
+      instagram: sm.instagram   ? `https://instagram.com/${sm.instagram}`      : null,
+      facebook:  sm.facebook_id ? `https://facebook.com/${sm.facebook_id}`     : null,
+      twitter:   sm.twitter     ? `https://twitter.com/${sm.twitter}`          : null,
+      tiktok:    sm.tiktok      ? `https://tiktok.com/@${sm.tiktok}`           : null,
+      snapchat:  sm.snapchat    ? `https://snapchat.com/add/${sm.snapchat}`     : null,
+      youtube:   sm.youtube     ? `https://youtube.com/${sm.youtube}`           : null,
     },
   };
 }
@@ -401,9 +404,12 @@ app.get('/api/place-socials', async (req, res) => {
     const sm = response.data.social_media || {};
     res.json({
       socialMedia: {
-        instagram: sm.instagram ? `https://instagram.com/${sm.instagram}` : null,
+        instagram: sm.instagram   ? `https://instagram.com/${sm.instagram}`  : null,
         facebook:  sm.facebook_id ? `https://facebook.com/${sm.facebook_id}` : null,
-        twitter:   sm.twitter ? `https://twitter.com/${sm.twitter}` : null,
+        twitter:   sm.twitter     ? `https://twitter.com/${sm.twitter}`      : null,
+        tiktok:    sm.tiktok      ? `https://tiktok.com/@${sm.tiktok}`       : null,
+        snapchat:  sm.snapchat    ? `https://snapchat.com/add/${sm.snapchat}` : null,
+        youtube:   sm.youtube     ? `https://youtube.com/${sm.youtube}`       : null,
       },
     });
   } catch {

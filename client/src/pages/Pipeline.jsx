@@ -26,8 +26,9 @@ const SCORE_OPTIONS = [
 
 export default function Pipeline() {
   const { leads, loading } = useLeads();
-  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '', ratings: [], contact: '' });
-  const [showRatingFilter, setShowRatingFilter] = useState(false);
+  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '', ratings: [], contact: [] });
+  const [showRatingFilter, setShowRatingFilter]   = useState(false);
+  const [showContactFilter, setShowContactFilter] = useState(false);
   const [sortBy, setSortBy]   = useState('dateAdded');
   const [sortDir, setSortDir] = useState('desc');
   const [expandedId, setExpandedId]     = useState(null);
@@ -54,12 +55,21 @@ export default function Pipeline() {
     if (filters.city    && !l.city?.toLowerCase().includes(filters.city.toLowerCase())) return false;
     if (filters.type    && !l.businessType?.toLowerCase().includes(filters.type.toLowerCase())) return false;
     if (filters.ratings.length > 0 && !filters.ratings.includes(l.leadScore)) return false;
-    if (filters.contact) {
-      const hasSocial = Object.values(l.socialMedia || {}).some(Boolean);
-      if (filters.contact === 'hasEmail'  && !l.discoveredEmail) return false;
-      if (filters.contact === 'hasPhone'  && !l.phone) return false;
-      if (filters.contact === 'hasSocial' && !hasSocial) return false;
-      if (filters.contact === 'noContact' && (l.discoveredEmail || l.phone || hasSocial)) return false;
+    if (filters.contact.length > 0) {
+      const sm = l.socialMedia || {};
+      const hasSocial = Object.values(sm).some(Boolean);
+      const checks = {
+        email:    !!l.discoveredEmail,
+        phone:    !!l.phone,
+        instagram:!!sm.instagram,
+        facebook: !!sm.facebook,
+        twitter:  !!sm.twitter,
+        tiktok:   !!sm.tiktok,
+        snapchat: !!sm.snapchat,
+        youtube:  !!sm.youtube,
+        noContact:!l.discoveredEmail && !l.phone && !hasSocial,
+      };
+      if (!filters.contact.some(c => checks[c])) return false;
     }
     return true;
   });
@@ -178,7 +188,7 @@ export default function Pipeline() {
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div className="p-8 text-slate-400 text-sm">Loading pipeline…</div>;
 
-  const hasFilters = filters.status || filters.quality || filters.city || filters.type || filters.ratings.length > 0 || filters.contact;
+  const hasFilters = filters.status || filters.quality || filters.city || filters.type || filters.ratings.length > 0 || filters.contact.length > 0;
 
   return (
     <div className="p-4 md:p-8">
@@ -252,17 +262,18 @@ export default function Pipeline() {
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
         />
 
-        <select
-          value={filters.contact}
-          onChange={e => setFilters(f => ({ ...f, contact: e.target.value }))}
-          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+        {/* Contact toggle */}
+        <button
+          onClick={() => setShowContactFilter(p => !p)}
+          className={`border rounded-lg px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${
+            filters.contact.length > 0
+              ? 'border-teal-400 bg-teal-50 text-teal-700'
+              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+          }`}
         >
-          <option value="">All Contact Info</option>
-          <option value="hasEmail">Has Email</option>
-          <option value="hasPhone">Has Phone</option>
-          <option value="hasSocial">Has Social</option>
-          <option value="noContact">No Contact Info</option>
-        </select>
+          Contact{filters.contact.length > 0 ? ` (${filters.contact.length})` : ''}
+          <span className="text-xs text-slate-400">{showContactFilter ? '▲' : '▼'}</span>
+        </button>
 
         {/* Rating toggle */}
         <button
@@ -279,7 +290,7 @@ export default function Pipeline() {
 
         {hasFilters && (
           <button
-            onClick={() => { setFilters({ status: '', quality: '', city: '', type: '', ratings: [], contact: '' }); setShowRatingFilter(false); }}
+            onClick={() => { setFilters({ status: '', quality: '', city: '', type: '', ratings: [], contact: [] }); setShowRatingFilter(false); setShowContactFilter(false); }}
             className="text-sm text-red-400 hover:text-red-600"
           >
             Clear filters
@@ -306,6 +317,46 @@ export default function Pipeline() {
           {filters.ratings.length > 0 && (
             <button
               onClick={() => setFilters(f => ({ ...f, ratings: [] }))}
+              className="text-xs text-slate-400 hover:text-slate-600 ml-auto"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Contact checkboxes (expanded) */}
+      {showContactFilter && (
+        <div className="flex flex-wrap gap-3 mb-4 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+          {[
+            { key: 'phone',    label: 'Phone' },
+            { key: 'email',    label: 'Email' },
+            { key: 'instagram',label: 'Instagram' },
+            { key: 'facebook', label: 'Facebook' },
+            { key: 'twitter',  label: 'X/Twitter' },
+            { key: 'tiktok',   label: 'TikTok' },
+            { key: 'snapchat', label: 'Snapchat' },
+            { key: 'youtube',  label: 'YouTube' },
+            { key: 'noContact',label: 'No Contact Info' },
+          ].map(({ key, label }) => (
+            <label key={key} className="flex items-center gap-2 cursor-pointer group select-none">
+              <input
+                type="checkbox"
+                checked={filters.contact.includes(key)}
+                onChange={() => setFilters(f => ({
+                  ...f,
+                  contact: f.contact.includes(key)
+                    ? f.contact.filter(c => c !== key)
+                    : [...f.contact, key],
+                }))}
+                className="w-4 h-4 rounded accent-teal-600 cursor-pointer"
+              />
+              <span className="text-sm text-slate-700 group-hover:text-slate-900">{label}</span>
+            </label>
+          ))}
+          {filters.contact.length > 0 && (
+            <button
+              onClick={() => setFilters(f => ({ ...f, contact: [] }))}
               className="text-xs text-slate-400 hover:text-slate-600 ml-auto"
             >
               Clear
@@ -448,21 +499,12 @@ function LeadRow({
             ) : (
               <span className="text-slate-400">No email found</span>
             )}
-            {lead.socialMedia?.instagram && (
-              <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer" className="text-pink-500 hover:underline block">
-                Instagram ↗
-              </a>
-            )}
-            {lead.socialMedia?.facebook && (
-              <a href={lead.socialMedia.facebook} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline block">
-                Facebook ↗
-              </a>
-            )}
-            {lead.socialMedia?.twitter && (
-              <a href={lead.socialMedia.twitter} target="_blank" rel="noreferrer" className="text-sky-500 hover:underline block">
-                X/Twitter ↗
-              </a>
-            )}
+            {lead.socialMedia?.instagram && <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer" className="text-pink-500 hover:underline block">Instagram ↗</a>}
+            {lead.socialMedia?.facebook  && <a href={lead.socialMedia.facebook}  target="_blank" rel="noreferrer" className="text-blue-500 hover:underline block">Facebook ↗</a>}
+            {lead.socialMedia?.twitter   && <a href={lead.socialMedia.twitter}   target="_blank" rel="noreferrer" className="text-sky-500 hover:underline block">X/Twitter ↗</a>}
+            {lead.socialMedia?.tiktok    && <a href={lead.socialMedia.tiktok}    target="_blank" rel="noreferrer" className="text-slate-800 hover:underline block">TikTok ↗</a>}
+            {lead.socialMedia?.snapchat  && <a href={lead.socialMedia.snapchat}  target="_blank" rel="noreferrer" className="text-yellow-500 hover:underline block">Snapchat ↗</a>}
+            {lead.socialMedia?.youtube   && <a href={lead.socialMedia.youtube}   target="_blank" rel="noreferrer" className="text-red-500 hover:underline block">YouTube ↗</a>}
           </div>
         </td>
 
@@ -521,26 +563,14 @@ function LeadRow({
                         View on Foursquare ↗
                       </a>
                     )}
-                    {(lead.socialMedia?.instagram || lead.socialMedia?.facebook || lead.socialMedia?.twitter) && (
+                    {Object.values(lead.socialMedia || {}).some(Boolean) && (
                       <div className="flex flex-wrap gap-2 mt-1">
-                        {lead.socialMedia.instagram && (
-                          <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer"
-                            className="text-xs text-pink-500 hover:underline">
-                            Instagram ↗
-                          </a>
-                        )}
-                        {lead.socialMedia.facebook && (
-                          <a href={lead.socialMedia.facebook} target="_blank" rel="noreferrer"
-                            className="text-xs text-blue-500 hover:underline">
-                            Facebook ↗
-                          </a>
-                        )}
-                        {lead.socialMedia.twitter && (
-                          <a href={lead.socialMedia.twitter} target="_blank" rel="noreferrer"
-                            className="text-xs text-sky-500 hover:underline">
-                            X/Twitter ↗
-                          </a>
-                        )}
+                        {lead.socialMedia?.instagram && <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer" className="text-xs text-pink-500 hover:underline">Instagram ↗</a>}
+                        {lead.socialMedia?.facebook  && <a href={lead.socialMedia.facebook}  target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">Facebook ↗</a>}
+                        {lead.socialMedia?.twitter   && <a href={lead.socialMedia.twitter}   target="_blank" rel="noreferrer" className="text-xs text-sky-500 hover:underline">X/Twitter ↗</a>}
+                        {lead.socialMedia?.tiktok    && <a href={lead.socialMedia.tiktok}    target="_blank" rel="noreferrer" className="text-xs text-slate-800 hover:underline">TikTok ↗</a>}
+                        {lead.socialMedia?.snapchat  && <a href={lead.socialMedia.snapchat}  target="_blank" rel="noreferrer" className="text-xs text-yellow-500 hover:underline">Snapchat ↗</a>}
+                        {lead.socialMedia?.youtube   && <a href={lead.socialMedia.youtube}   target="_blank" rel="noreferrer" className="text-xs text-red-500 hover:underline">YouTube ↗</a>}
                       </div>
                     )}
                   </div>
