@@ -16,9 +16,18 @@ const STATUSES = [
 
 const MSG_TYPES = ['Instagram DM', 'Cold Email', 'Walk-in Talking Points'];
 
+const SCORE_OPTIONS = [
+  { score: 5, label: 'No site' },
+  { score: 4, label: 'Free builder' },
+  { score: 3, label: 'DIY builder' },
+  { score: 2, label: 'Non-.com' },
+  { score: 1, label: 'Has site' },
+];
+
 export default function Pipeline() {
   const { leads, loading } = useLeads();
-  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '' });
+  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '', ratings: [] });
+  const [showRatingFilter, setShowRatingFilter] = useState(false);
   const [sortBy, setSortBy]   = useState('dateAdded');
   const [sortDir, setSortDir] = useState('desc');
   const [expandedId, setExpandedId]     = useState(null);
@@ -28,11 +37,21 @@ export default function Pipeline() {
   const [colModal, setColModal]         = useState(false);
 
   // ── Filtering ──────────────────────────────────────────────────────────────
+  function toggleRating(score) {
+    setFilters(f => {
+      const next = f.ratings.includes(score)
+        ? f.ratings.filter(r => r !== score)
+        : [...f.ratings, score];
+      return { ...f, ratings: next };
+    });
+  }
+
   const filtered = leads.filter(l => {
     if (filters.status  && l.status !== filters.status) return false;
     if (filters.quality && l.siteQuality !== filters.quality) return false;
     if (filters.city    && !l.city?.toLowerCase().includes(filters.city.toLowerCase())) return false;
     if (filters.type    && !l.businessType?.toLowerCase().includes(filters.type.toLowerCase())) return false;
+    if (filters.ratings.length > 0 && !filters.ratings.includes(l.leadScore)) return false;
     return true;
   });
 
@@ -118,7 +137,7 @@ export default function Pipeline() {
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div className="p-8 text-slate-400 text-sm">Loading pipeline…</div>;
 
-  const hasFilters = Object.values(filters).some(Boolean);
+  const hasFilters = filters.status || filters.quality || filters.city || filters.type || filters.ratings.length > 0;
 
   return (
     <div className="p-4 md:p-8">
@@ -183,15 +202,55 @@ export default function Pipeline() {
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
         />
 
+        {/* Rating toggle */}
+        <button
+          onClick={() => setShowRatingFilter(prev => !prev)}
+          className={`border rounded-lg px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${
+            filters.ratings.length > 0
+              ? 'border-teal-400 bg-teal-50 text-teal-700'
+              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+          }`}
+        >
+          Rating{filters.ratings.length > 0 ? ` (${filters.ratings.length})` : ''}
+          <span className="text-xs text-slate-400">{showRatingFilter ? '▲' : '▼'}</span>
+        </button>
+
         {hasFilters && (
           <button
-            onClick={() => setFilters({ status: '', quality: '', city: '', type: '' })}
+            onClick={() => { setFilters({ status: '', quality: '', city: '', type: '', ratings: [] }); setShowRatingFilter(false); }}
             className="text-sm text-red-400 hover:text-red-600"
           >
             Clear filters
           </button>
         )}
       </div>
+
+      {/* Rating checkboxes (expanded) */}
+      {showRatingFilter && (
+        <div className="flex flex-wrap gap-3 mb-4 px-4 py-3 bg-white border border-slate-200 rounded-xl">
+          {SCORE_OPTIONS.map(({ score, label }) => (
+            <label key={score} className="flex items-center gap-2 cursor-pointer group select-none">
+              <input
+                type="checkbox"
+                checked={filters.ratings.includes(score)}
+                onChange={() => toggleRating(score)}
+                className="w-4 h-4 rounded accent-teal-600 cursor-pointer"
+              />
+              <span className="text-sm text-slate-700 group-hover:text-slate-900">
+                <span className="font-mono font-bold">{score}</span> — {label}
+              </span>
+            </label>
+          ))}
+          {filters.ratings.length > 0 && (
+            <button
+              onClick={() => setFilters(f => ({ ...f, ratings: [] }))}
+              className="text-xs text-slate-400 hover:text-slate-600 ml-auto"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       {sorted.length === 0 ? (

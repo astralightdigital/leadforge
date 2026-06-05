@@ -17,6 +17,10 @@ app.use(express.json());
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ── Geocode cache — prevents hitting Nominatim repeatedly for the same city ───
+const geocodeCache = new Map();
+const GEOCODE_TTL = 20 * 60 * 1000; // 20 minutes
+
 // ── OpenStreetMap / Overpass Places Search ────────────────────────────────────
 // Free, no API key, no account — uses Nominatim for geocoding + Overpass for POI data.
 
@@ -24,6 +28,13 @@ async function geocodeCity(city, state) {
   // Strip any state abbreviation accidentally typed in the city field
   const cleanCity = city.replace(/,?\s+[A-Z]{2}$/, '').trim();
   const geoQuery = cleanCity ? `${cleanCity}, ${state}` : state;
+  const cacheKey = geoQuery.toLowerCase();
+
+  const cached = geocodeCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < GEOCODE_TTL) {
+    console.log(`[geocode] cache hit for "${geoQuery}"`);
+    return cached.data;
+  }
 
   const resp = await axios.get('https://nominatim.openstreetmap.org/search', {
     params: { q: geoQuery, format: 'json', limit: 1, countrycodes: 'us' },
@@ -39,7 +50,10 @@ async function geocodeCity(city, state) {
   const { lat, lon } = resp.data[0];
   const clat = parseFloat(lat), clon = parseFloat(lon);
   const delta = 0.18; // ~20 km radius
-  return { lat: clat, lon: clon, south: clat - delta, north: clat + delta, west: clon - delta, east: clon + delta };
+  const result = { lat: clat, lon: clon, south: clat - delta, north: clat + delta, west: clon - delta, east: clon + delta };
+
+  geocodeCache.set(cacheKey, { data: result, ts: Date.now() });
+  return result;
 }
 
 function buildOverpassQuery(query, bbox) {
@@ -158,7 +172,9 @@ async function nominatimFallback(query, city, state, res) {
 }
 
 async function foursquareSearch(query, city, state) {
-  const geo = await geocodeCity(city, state);
+  // Use FSQ's built-in `near` geocoding — avoids Nominatim entirely and works
+  // correctly for state-only searches (no city) by finding populated areas.
+  const near = city.trim() ? `${city.trim()}, ${state}, USA` : `${state}, USA`;
 
   const response = await axios.get('https://places-api.foursquare.com/places/search', {
     headers: {
@@ -166,7 +182,7 @@ async function foursquareSearch(query, city, state) {
       Accept: 'application/json',
       'X-Places-Api-Version': '2025-06-17',
     },
-    params: { query, ll: `${geo.lat},${geo.lon}`, radius: 20000, limit: 50 },
+    params: { query, near, limit: 50 },
   });
 
   const allRaw = response.data.results || [];
@@ -188,6 +204,7 @@ async function foursquareSearch(query, city, state) {
 }
 
 app.get('/api/places-search', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const { query, city = '', state } = req.query;
   if (!query || !state) {
     return res.status(400).json({ error: 'query and state are required' });
