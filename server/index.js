@@ -238,8 +238,8 @@ function mapFsqPlace(p, query) {
     businessName:  p.name,
     address:       [p.location?.address, p.location?.locality, p.location?.region, p.location?.postcode].filter(Boolean).join(', '),
     city:          [p.location?.locality, p.location?.region].filter(Boolean).join(', '),
-    lat:           p.latitude  || null,
-    lng:           p.longitude || null,
+    lat:           p.geocodes?.main?.latitude  || null,
+    lng:           p.geocodes?.main?.longitude || null,
     phone:         p.tel  || null,
     websiteUrl:    p.website || null,
     businessType:  p.categories?.[0]?.name || query,
@@ -264,7 +264,7 @@ async function fsqSearchNear(query, near) {
     },
     params: {
       query, near, limit: 50,
-      fields: 'fsq_place_id,name,location,categories,geocodes,tel,website,social_media,link,latitude,longitude',
+      fields: 'fsq_place_id,name,location,categories,geocodes,tel,website,social_media,link',
     },
   });
   return (response.data.results || []).map(p => mapFsqPlace(p, query));
