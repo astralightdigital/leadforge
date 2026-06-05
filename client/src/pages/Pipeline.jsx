@@ -3,7 +3,7 @@ import { doc, updateDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useLeads } from '../hooks/useLeads';
 import { daysSince, formatDate, exportToCSV, copyForSheets } from '../lib/utils';
-import { getIssueDescription } from '../lib/scoring';
+import { getIssueDescription, getSiteQuality, calculateLeadScore } from '../lib/scoring';
 import { api } from '../lib/api';
 import SiteQualityBadge from '../components/SiteQualityBadge';
 import LeadScoreBadge from '../components/LeadScoreBadge';
@@ -117,6 +117,47 @@ export default function Pipeline() {
     await deleteDoc(doc(db, 'leads', id));
     if (expandedId === id) setExpandedId(null);
     showToast('Lead deleted', 'error');
+  }
+
+  const JUNK_PATTERNS = [
+    's3.amazonaws.com','cloudfront.net','hubbiz','manta.com','yellowpages.com',
+    'yelp.com','chamberofcommerce.com','alignable.com','thumbtack.com','bark.com',
+    'homeadvisor.com','houzz.com','facebook.com','instagram.com','twitter.com',
+    'tiktok.com','maps.google.com','goo.gl',
+  ];
+  const JUNK_EXT = ['.jpg','.jpeg','.png','.gif','.webp','.svg','.pdf'];
+
+  function isJunkUrl(url) {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    return JUNK_PATTERNS.some(p => lower.includes(p)) ||
+           JUNK_EXT.some(e => lower.split('?')[0].endsWith(e));
+  }
+
+  async function fixJunkUrls() {
+    const toFix = leads.filter(l => isJunkUrl(l.websiteUrl));
+    if (!toFix.length) { showToast('No junk URLs found'); return; }
+
+    setSyncing(true);
+    setSyncProgress({ done: 0, total: toFix.length });
+
+    const BATCH = 10;
+    for (let i = 0; i < toFix.length; i += BATCH) {
+      await Promise.all(
+        toFix.slice(i, i + BATCH).map(lead =>
+          updateDoc(doc(db, 'leads', lead.id), {
+            websiteUrl:   null,
+            siteQuality:  getSiteQuality(null),
+            leadScore:    calculateLeadScore(null),
+          })
+        )
+      );
+      setSyncProgress({ done: Math.min(i + BATCH, toFix.length), total: toFix.length });
+    }
+
+    setSyncing(false);
+    setSyncProgress(null);
+    showToast(`Fixed ${toFix.length} leads with junk URLs`);
   }
 
   async function rescanEmails() {
@@ -240,6 +281,15 @@ export default function Pipeline() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={fixJunkUrls}
+            disabled={syncing}
+            className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {syncing && syncProgress
+              ? `Fixing ${syncProgress.done}/${syncProgress.total}…`
+              : 'Fix URLs'}
+          </button>
           <button
             onClick={rescanEmails}
             disabled={syncing}
