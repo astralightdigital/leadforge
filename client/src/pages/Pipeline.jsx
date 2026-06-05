@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { doc, updateDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, arrayUnion, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useLeads } from '../hooks/useLeads';
 import { daysSince, formatDate, exportToCSV, copyForSheets } from '../lib/utils';
@@ -119,50 +119,42 @@ export default function Pipeline() {
     showToast('Lead deleted', 'error');
   }
 
-  const JUNK_PATTERNS = [
-    'amazonaws.com','cloudfront.net','hubbiz','manta.com','yellowpages.com',
-    'yelp.com','chamberofcommerce.com','alignable.com','thumbtack.com','bark.com',
-    'homeadvisor.com','houzz.com','facebook.com','instagram.com','twitter.com',
-    'tiktok.com','maps.google.com','goo.gl','bizhub',
-  ];
-  const JUNK_EXT = ['.jpg','.jpeg','.png','.gif','.webp','.svg','.pdf'];
-
-  function isJunkUrl(url) {
-    if (!url) return false;
-    const trimmed = url.trim();
-    // A real business website must start with http — anything else is junk
-    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return true;
-    const lower = trimmed.toLowerCase();
-    if (JUNK_PATTERNS.some(p => lower.includes(p))) return true;
-    if (JUNK_EXT.some(e => lower.split('?')[0].endsWith(e))) return true;
-    return false;
-  }
-
   async function fixJunkUrls() {
-    const toFix = leads.filter(l => isJunkUrl(l.websiteUrl));
-    if (!toFix.length) { showToast('No junk URLs found — check console for details'); console.log('All websiteUrls:', leads.map(l => l.websiteUrl).filter(Boolean)); return; }
-    showToast(`Fixing ${toFix.length} junk URLs…`);
-
     setSyncing(true);
-    setSyncProgress({ done: 0, total: toFix.length });
+    setSyncProgress({ done: 0, total: '…' });
 
-    const BATCH = 10;
-    for (let i = 0; i < toFix.length; i += BATCH) {
-      await Promise.all(
-        toFix.slice(i, i + BATCH).map(lead =>
-          updateDoc(doc(db, 'leads', lead.id), {
-            websiteUrl:   null,
-            siteQuality:  getSiteQuality(null),
-            leadScore:    calculateLeadScore(null),
-          })
-        )
+    // Query Firestore directly — bypasses React state entirely
+    const snapshot = await getDocs(collection(db, 'leads'));
+    const toFix = [];
+    snapshot.forEach(docSnap => {
+      const url = docSnap.data().websiteUrl;
+      if (!url) return;
+      const low = url.toLowerCase();
+      const bad = (
+        (!url.startsWith('http://') && !url.startsWith('https://')) ||
+        low.includes('amazonaws') || low.includes('hubbiz') ||
+        low.includes('cloudfront') || low.includes('manta.com') ||
+        low.includes('yellowpages') || low.includes('bizhub') ||
+        low.includes('alignable') || low.includes('s3.') ||
+        /\.(jpg|jpeg|png|gif|webp|svg|pdf)(\?|$)/.test(low)
       );
-      setSyncProgress({ done: Math.min(i + BATCH, toFix.length), total: toFix.length });
+      if (bad) toFix.push(docSnap.id);
+    });
+
+    if (!toFix.length) {
+      setSyncing(false);
+      setSyncProgress(null);
+      showToast('No junk URLs found');
+      return;
     }
+
+    const b = writeBatch(db);
+    toFix.forEach(id => b.update(doc(db, 'leads', id), { websiteUrl: null, siteQuality: 'none', leadScore: 5 }));
+    await b.commit();
 
     setSyncing(false);
     setSyncProgress(null);
-    showToast(`Fixed ${toFix.length} leads with junk URLs`);
+    showToast(`Fixed ${toFix.length} junk URLs`);
   }
 
   async function rescanEmails() {
