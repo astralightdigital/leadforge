@@ -127,27 +127,52 @@ export default function Pipeline() {
       const snapshot = await getDocs(collection(db, 'leads'));
       const toFix = [];
 
-      snapshot.forEach(docSnap => {
-        const url = docSnap.data().websiteUrl;
-        if (!url) return;
+      const badWebsite = id => false; // defined below via closure
+      const junkUrl = url => {
+        if (!url) return false;
         const low = url.toLowerCase();
-        const bad = (
+        return (
           (!url.startsWith('http://') && !url.startsWith('https://')) ||
-          low.includes('amazonaws') || low.includes('hubbiz') ||
+          low.includes('amazonaws') || low.includes('hubbiz') || low.includes('hub.biz') ||
           low.includes('cloudfront') || low.includes('manta.com') ||
           low.includes('yellowpages') || low.includes('bizhub') ||
           low.includes('alignable') || low.includes('s3.') ||
-          low.includes('.poi.place') || low.includes('poi.place') ||
+          low.includes('poi.place') ||
           /\.(jpg|jpeg|png|gif|webp|svg|pdf)(\?|$)/.test(low)
         );
-        if (bad) toFix.push(docSnap.id);
+      };
+      const junkEmail = email => {
+        if (!email) return false;
+        // Must contain @ and not contain URL-like patterns
+        return !email.includes('@') ||
+          email.includes('%2F') || email.includes('amazonaws') ||
+          email.includes('hubbiz') || email.includes('s3.') ||
+          email.includes('http') || email.includes('.jpg') ||
+          email.includes('.png');
+      };
+
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        const update = {};
+        if (junkUrl(data.websiteUrl)) {
+          update.websiteUrl = null;
+          update.siteQuality = 'none';
+          update.leadScore = 5;
+        }
+        if (junkEmail(data.discoveredEmail)) {
+          update.discoveredEmail = null;
+          update.emailGuessed = false;
+        }
+        if (Object.keys(update).length) toFix.push({ id: docSnap.id, update });
       });
 
       if (toFix.length > 0) {
         const b = writeBatch(db);
-        toFix.forEach(id => b.update(doc(db, 'leads', id), { websiteUrl: null, siteQuality: 'none', leadScore: 5 }));
+        toFix.forEach(({ id, update }) => b.update(doc(db, 'leads', id), update));
         await b.commit();
-        showToast(`Fixed ${toFix.length} junk URLs`);
+        showToast(`Fixed ${toFix.length} leads`);
+      } else {
+        showToast('All clear — no junk found');
       }
     } catch (err) {
       alert('Error: ' + err.message);
