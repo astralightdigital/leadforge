@@ -424,36 +424,61 @@ app.get('/api/place-socials', async (req, res) => {
 });
 
 // ── Email Extractor ────────────────────────────────────────────────────────────
+const EMAIL_BLACKLIST = [
+  'example.com','domain.com','email.com','yoursite.com','sentry.io',
+  'w3.org','schema.org','wixpress.com','squarespace.com','shopify.com',
+  'googleapis.com','gstatic.com','facebook.com','instagram.com','twitter.com',
+  'tiktok.com','youtube.com','apple.com','microsoft.com','adobe.com',
+];
+const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+
+function extractEmail(html) {
+  if (typeof html !== 'string') return null;
+  const matches = html.match(EMAIL_RE) || [];
+  return matches.find(e => !EMAIL_BLACKLIST.some(d => e.toLowerCase().includes(d))) || null;
+}
+
+async function fetchHtml(pageUrl) {
+  const resp = await axios.get(pageUrl, {
+    timeout: 8000,
+    maxContentLength: 500_000,
+    maxRedirects: 5,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml',
+    },
+  });
+  return typeof resp.data === 'string' ? resp.data : '';
+}
+
 app.get('/api/fetch-email', async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.json({ email: null });
+  const { url, facebook } = req.query;
+  if (!url && !facebook) return res.json({ email: null });
 
-  try {
-    const response = await axios.get(url, {
-      timeout: 8000,
-      maxContentLength: 500_000,
-      maxRedirects: 5,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml',
-      },
-    });
-
-    const html = typeof response.data === 'string' ? response.data : '';
-    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-    const matches = html.match(emailRegex) || [];
-
-    const blacklist = [
-      'example.com', 'domain.com', 'email.com', 'yoursite.com',
-      'sentry.io', 'w3.org', 'schema.org', 'wixpress.com',
-      'squarespace.com', 'shopify.com',
-    ];
-    const validEmail = matches.find(e => !blacklist.some(d => e.includes(d)));
-
-    res.json({ email: validEmail || null });
-  } catch {
-    res.json({ email: null });
+  // Build candidate pages: website homepage + common contact paths + Facebook
+  const candidates = [];
+  if (url) {
+    try {
+      const origin = new URL(url).origin;
+      candidates.push(url, `${origin}/contact`, `${origin}/about`, `${origin}/contact-us`, `${origin}/about-us`);
+    } catch {
+      candidates.push(url);
+    }
   }
+  if (facebook) candidates.push(facebook);
+
+  // Fetch all candidates in parallel, return first email found
+  const results = await Promise.allSettled(
+    candidates.map(async pageUrl => {
+      const html = await fetchHtml(pageUrl);
+      const email = extractEmail(html);
+      if (!email) throw new Error('no email');
+      return email;
+    })
+  );
+
+  const found = results.find(r => r.status === 'fulfilled');
+  res.json({ email: found?.value || null });
 });
 
 // ── Outreach Message Generator ─────────────────────────────────────────────────

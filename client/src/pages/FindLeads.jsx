@@ -135,8 +135,11 @@ export default function FindLeads() {
               dateAdded:       new Date().toISOString(),
             };
             const docRef = await addDoc(collection(db, 'leads'), docData);
-            if (lead.websiteUrl) {
-              fetch(api(`/api/fetch-email?url=${encodeURIComponent(lead.websiteUrl)}`))
+            if (lead.websiteUrl || lead.socialMedia?.facebook) {
+              const q = new URLSearchParams();
+              if (lead.websiteUrl)            q.set('url',      lead.websiteUrl);
+              if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
+              fetch(api(`/api/fetch-email?${q}`))
                 .then(r => r.json())
                 .then(({ email }) => { if (email) updateDoc(doc(db, 'leads', docRef.id), { discoveredEmail: email }).catch(() => {}); })
                 .catch(() => {});
@@ -234,9 +237,12 @@ export default function FindLeads() {
     setAddedIds(prev => new Set([...prev, lead.fsqId]));
     showToast(`${lead.businessName} added to pipeline`);
 
-    // Background email extraction
-    if (lead.websiteUrl) {
-      fetch(api(`/api/fetch-email?url=${encodeURIComponent(lead.websiteUrl)}`))
+    // Background email extraction — checks website pages + Facebook
+    if (lead.websiteUrl || lead.socialMedia?.facebook) {
+      const q = new URLSearchParams();
+      if (lead.websiteUrl)           q.set('url',      lead.websiteUrl);
+      if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
+      fetch(api(`/api/fetch-email?${q}`))
         .then(r => r.json())
         .then(({ email }) => {
           if (email) {

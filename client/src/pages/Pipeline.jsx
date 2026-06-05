@@ -110,6 +110,35 @@ export default function Pipeline() {
     showToast('Lead deleted', 'error');
   }
 
+  async function rescanEmails() {
+    const toScan = leads.filter(l => !l.discoveredEmail && (l.websiteUrl || l.socialMedia?.facebook));
+    if (!toScan.length) { showToast('No leads missing emails to scan'); return; }
+
+    setSyncing(true);
+    setSyncProgress({ done: 0, total: toScan.length });
+
+    const BATCH = 4;
+    for (let i = 0; i < toScan.length; i += BATCH) {
+      await Promise.all(
+        toScan.slice(i, i + BATCH).map(async lead => {
+          try {
+            const q = new URLSearchParams();
+            if (lead.websiteUrl)            q.set('url',      lead.websiteUrl);
+            if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
+            const res = await fetch(api(`/api/fetch-email?${q}`));
+            const { email } = await res.json();
+            if (email) await updateDoc(doc(db, 'leads', lead.id), { discoveredEmail: email });
+          } catch {}
+        })
+      );
+      setSyncProgress({ done: Math.min(i + BATCH, toScan.length), total: toScan.length });
+    }
+
+    setSyncing(false);
+    setSyncProgress(null);
+    showToast('Email rescan complete');
+  }
+
   async function syncSocials() {
     const toSync = leads.filter(l =>
       l.fsqId && !l.fsqId.startsWith('osm-') &&
@@ -200,6 +229,15 @@ export default function Pipeline() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={rescanEmails}
+            disabled={syncing}
+            className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {syncing && syncProgress
+              ? `Scanning ${syncProgress.done}/${syncProgress.total}…`
+              : 'Rescan Emails'}
+          </button>
           <button
             onClick={syncSocials}
             disabled={syncing}
