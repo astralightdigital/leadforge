@@ -289,17 +289,16 @@ const CLOSED_BUCKETS = new Set(['VeryLikelyClosed', 'LikelyClosed']);
 
 // ── Geoapify Places ───────────────────────────────────────────────────────────
 const GEOAPIFY_CATEGORY_MAP = [
-  [/nail/,                              'commercial.beauty.nail_salon'],
+  [/nail/,                              'commercial.beauty'],
   [/hair|salon/,                        'commercial.beauty.hairdresser'],
   [/barber/,                            'commercial.beauty.hairdresser'],
-  [/spa|massage|acupuncture/,           'commercial.beauty'],
-  [/tanning/,                           'commercial.beauty'],
-  [/gym|fitness|crossfit|yoga|pilates/, 'leisure.fitness'],
-  [/cafe|coffee/,                       'commercial.food.cafe'],
-  [/bakery/,                            'commercial.food.bakery'],
-  [/fast.?food|burger/,                 'commercial.food.fast_food'],
-  [/bar|pub/,                           'commercial.food.bar'],
-  [/pizza|restaurant|dining|sushi|chinese|korean|vietnamese|mexican|thai|bbq/, 'commercial.food.restaurant'],
+  [/spa|massage|acupuncture|tanning/,   'commercial.beauty'],
+  [/gym|fitness|crossfit|yoga|pilates/, 'sport.fitness'],
+  [/cafe|coffee/,                       'catering.cafe'],
+  [/bakery/,                            'catering.bakery'],
+  [/fast.?food|burger/,                 'catering.fast_food'],
+  [/bar|pub/,                           'catering.bar'],
+  [/pizza|restaurant|dining|sushi|chinese|korean|vietnamese|mexican|thai|bbq/, 'catering.restaurant'],
   [/dentist|dental|orthodontist/,       'healthcare.dentist'],
   [/doctor|clinic|urgent|chiropractor/, 'healthcare.clinic_or_praxis'],
   [/pharmacy/,                          'healthcare.pharmacy'],
@@ -307,13 +306,12 @@ const GEOAPIFY_CATEGORY_MAP = [
   [/pet|grooming/,                      'commercial.pet'],
   [/auto|car repair|mechanic|oil change|tire/, 'service.vehicle.car_repair'],
   [/car.?wash/,                         'service.vehicle.car_wash'],
-  [/florist|flower/,                    'commercial.shopping.florist'],
+  [/florist|flower/,                    'commercial.florist'],
   [/grocery|supermarket/,               'commercial.supermarket'],
   [/laundry|dry.?clean/,               'service.laundry'],
   [/real.?estate|realtor/,              'commercial.estate_agent'],
   [/lawyer|attorney/,                   'office.lawyer'],
   [/insurance/,                         'office.insurance'],
-  [/cleaning|landscaping|pest/,         'service'],
   [/daycare|preschool/,                 'education.childcare'],
   [/tutoring/,                          'education'],
 ];
@@ -379,7 +377,7 @@ async function geoapifySearch(query, city, state) {
         if (!seen.has(b.fsqId)) { seen.add(b.fsqId); results.push(b); }
       }
     } catch (err) {
-      console.error(`[geo] ${hub} failed: ${err.response?.status ?? 'err'} ${err.message}`);
+      console.error(`[geo] ${hub} failed: ${err.response?.status ?? 'err'} ${err.message} — ${JSON.stringify(err.response?.data)}`);
     }
     await new Promise(r => setTimeout(r, 150));
   }
