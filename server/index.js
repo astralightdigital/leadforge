@@ -310,12 +310,17 @@ async function foursquareSearch(query, city, state) {
   if (!hubs) return fsqSearchNear(query, `${state}, USA`);
 
   console.log(`[search] state-wide FSQ: querying ${hubs.length} hubs in ${state}`);
-  const batches = await Promise.all(
-    hubs.map(hub => fsqSearchNear(query, `${hub}, ${state}, USA`).catch(err => {
+  const batches = [];
+  for (const hub of hubs) {
+    try {
+      const results = await fsqSearchNear(query, `${hub}, ${state}, USA`);
+      batches.push(results);
+    } catch (err) {
       console.error(`[fsq] ${hub} failed — HTTP ${err.response?.status ?? 'no-response'}: ${err.message}`);
-      return [];
-    }))
-  );
+      batches.push([]);
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
 
   const seen = new Set();
   return batches.flat().filter(b => {
