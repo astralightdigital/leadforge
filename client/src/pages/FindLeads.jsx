@@ -69,6 +69,9 @@ export default function FindLeads() {
   const [bulkAddedCount, setBulkAddedCount] = useState(0);
   const [showScanPreview, setShowScanPreview] = useState(false);
   const scanAbortRef = useRef(false);
+  const [enrichingTotal, setEnrichingTotal]   = useState(0);
+  const [enrichingDone,  setEnrichingDone]    = useState(0);
+  const enrichAbortRef = useRef(false);
 
   // Saved searches (localStorage)
   const [savedSearches, setSavedSearches] = useState(() => {
@@ -232,6 +235,8 @@ export default function FindLeads() {
     setLoading(true);
     setResults([]);
     setIsFallback(false);
+    enrichAbortRef.current = true;
+    setEnrichingTotal(0);
 
     try {
       const allResults = await Promise.all(
@@ -266,11 +271,45 @@ export default function FindLeads() {
       });
 
       setResults(enriched);
+      enrichAbortRef.current = false;
+      setEnrichingDone(0);
+      setEnrichingTotal(enriched.length);
+      enrichInBackground(enriched);
     } catch (err) {
       setError(`Search failed: ${err.message}`);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function enrichInBackground(leads) {
+    const BATCH = 10;
+    const DELAY = 300;
+    for (let i = 0; i < leads.length; i += BATCH) {
+      if (enrichAbortRef.current) break;
+      const batch = leads.slice(i, i + BATCH);
+      await Promise.all(batch.map(async lead => {
+        if (enrichAbortRef.current) return;
+        try {
+          const q = new URLSearchParams();
+          if (lead.businessName) q.set('name', lead.businessName);
+          if (lead.city)         q.set('city', lead.city);
+          const data = await fetch(api(`/api/fetch-email?${q}`)).then(r => r.json());
+          const update = {};
+          if (data.socials) Object.entries(data.socials).forEach(([k, v]) => { if (v) update[k] = v; });
+          if (Object.keys(update).length) {
+            setResults(prev => prev.map(r =>
+              r.fsqId === lead.fsqId
+                ? { ...r, socialMedia: { ...r.socialMedia, ...update } }
+                : r
+            ));
+          }
+        } catch {}
+      }));
+      setEnrichingDone(prev => Math.min(prev + BATCH, leads.length));
+      if (i + BATCH < leads.length) await new Promise(res => setTimeout(res, DELAY));
+    }
+    setEnrichingTotal(0);
   }
 
   async function addToPipeline(lead) {
@@ -610,6 +649,9 @@ export default function FindLeads() {
               )}
               {' '}results ·{' '}
               <span className="text-teal-600 font-medium">{addedIds.size}</span> added to pipeline
+              {enrichingTotal > 0 && (
+                <span className="ml-3 text-slate-400">· finding socials {enrichingDone}/{enrichingTotal}</span>
+              )}
             </p>
           </div>
 
