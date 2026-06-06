@@ -311,7 +311,7 @@ const GEOAPIFY_CATEGORY_MAP = [
   [/sushi/,                                       'catering.restaurant.sushi'],
   [/thai/,                                        'catering.restaurant.thai'],
   [/indian/,                                      'catering.restaurant.indian'],
-  [/asian/,                                       'catering.restaurant.asian,catering.restaurant.chinese,catering.restaurant.korean,catering.restaurant.japanese,catering.restaurant.vietnamese,catering.restaurant.thai,catering.restaurant.sushi,catering.restaurant.indian,catering.restaurant.indonesian,catering.restaurant.malaysian,catering.restaurant.ramen,catering.restaurant.noodle'],
+  [/asian/,                                       'catering.restaurant.asian,catering.restaurant.chinese,catering.restaurant.korean,catering.restaurant.japanese,catering.restaurant.vietnamese,catering.restaurant.thai,catering.restaurant.sushi,catering.restaurant.filipino,catering.restaurant.ramen,catering.restaurant.noodle'],
   [/bbq|barbecue/,                                'catering.restaurant.barbecue'],
   [/seafood/,                                     'catering.restaurant.seafood'],
   [/cafe|coffee/,                                 'catering.cafe'],
