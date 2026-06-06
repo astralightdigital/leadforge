@@ -940,25 +940,29 @@ async function searchSocialMedia(name, city) {
     } catch (e) { console.error('[social-search] Bing API:', e.message); }
   }
 
-  // Fallback: DuckDuckGo HTML (puts real URLs in hrefs, scraper-friendly)
+  // Fallback: DuckDuckGo HTML — decode uddg= redirect params which contain the real destination URL
   try {
     const q = encodeURIComponent(`"${name}" ${location} facebook instagram`);
     const html = await fetchHtml(`https://html.duckduckgo.com/html/?q=${q}`);
-    // DDG puts destination URLs directly in href and in result__url spans
-    const allUrls = [...(html.match(/(?:https?:\/\/)?(?:www\.)?facebook\.com\/(?:pages\/[^/?&"'\s<>]+\/\d+|[a-zA-Z0-9._-]+)/gi) || []),
-                    ...(html.match(/(?:https?:\/\/)?(?:www\.)?instagram\.com\/[a-zA-Z0-9._]+/gi) || [])];
-    for (const u of allUrls) {
-      const norm = u.startsWith('http') ? u : `https://${u}`;
-      if (!socials.facebook && norm.includes('facebook.com')) {
-        const slug = norm.split('facebook.com/')[1]?.split(/[/?]/)[0];
-        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) socials.facebook = `https://facebook.com/${slug}`;
-      }
-      if (!socials.instagram && norm.includes('instagram.com')) {
-        const slug = norm.split('instagram.com/')[1]?.split(/[/?]/)[0];
-        if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) socials.instagram = `https://instagram.com/${slug}`;
-      }
-      if (socials.facebook && socials.instagram) break;
+    const uddgMatches = html.match(/uddg=([^&"'\s]+)/g) || [];
+    for (const m of uddgMatches) {
+      try {
+        const decoded = decodeURIComponent(m.replace('uddg=', ''));
+        if (!socials.facebook && decoded.includes('facebook.com')) {
+          const slug = decoded.split('facebook.com/')[1]?.split(/[/?#]/)[0];
+          if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase()))
+            socials.facebook = `https://facebook.com/${slug}`;
+        }
+        if (!socials.instagram && decoded.includes('instagram.com')) {
+          const slug = decoded.split('instagram.com/')[1]?.split(/[/?#]/)[0];
+          if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase()))
+            socials.instagram = `https://instagram.com/${slug}`;
+        }
+        if (socials.facebook && socials.instagram) break;
+      } catch {}
     }
+    if (socials.facebook || socials.instagram)
+      console.log(`[social-search] found for "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
   } catch (e) { console.error('[social-search] DDG scrape:', e.message); }
 
   return socials;
