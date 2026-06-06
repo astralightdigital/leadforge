@@ -392,7 +392,7 @@ async function geoapifySearchNear(query, lat, lng) {
       limit:      100,
       apiKey:     process.env.GEOAPIFY_API_KEY,
     },
-    timeout: 10000,
+    timeout: 20000,
   });
   return (response.data.features || [])
     .map(f => mapGeoapifyPlace(f, query))
