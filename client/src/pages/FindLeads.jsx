@@ -190,9 +190,11 @@ export default function FindLeads() {
             };
             const docRef = await addDoc(collection(db, 'leads'), docData);
             const q = new URLSearchParams();
-            if (lead.fsqId && !lead.fsqId.startsWith('osm-') && !lead.fsqId.startsWith('here:') && !lead.fsqId.startsWith('geo-')) q.set('fsqId', lead.fsqId);
+            if (lead.fsqId && !lead.fsqId.startsWith('osm-') && !lead.fsqId.startsWith('here:')) q.set('fsqId', lead.fsqId);
             if (lead.websiteUrl)            q.set('url',      lead.websiteUrl);
             if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
+            if (lead.businessName)          q.set('name',     lead.businessName);
+            if (lead.city)                  q.set('city',     lead.city);
             if ([...q.keys()].length) {
               fetch(api(`/api/fetch-email?${q}`))
                 .then(r => r.json())
@@ -300,9 +302,11 @@ export default function FindLeads() {
     showToast(`${lead.businessName} added to pipeline`);
 
     const q = new URLSearchParams();
-    if (lead.fsqId && !lead.fsqId.startsWith('osm-') && !lead.fsqId.startsWith('here:') && !lead.fsqId.startsWith('geo-')) q.set('fsqId', lead.fsqId);
+    if (lead.fsqId && !lead.fsqId.startsWith('osm-') && !lead.fsqId.startsWith('here:')) q.set('fsqId', lead.fsqId);
     if (lead.websiteUrl)            q.set('url',      lead.websiteUrl);
     if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
+    if (lead.businessName)          q.set('name',     lead.businessName);
+    if (lead.city)                  q.set('city',     lead.city);
     if ([...q.keys()].length) fetch(api(`/api/fetch-email?${q}`))
       .then(r => r.json())
       .then(({ email, guessed, socials, phone }) => {

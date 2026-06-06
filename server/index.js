@@ -906,6 +906,59 @@ function extractSocials(html) {
   return { socials, phone };
 }
 
+const SOCIAL_SEARCH_SKIP_FB = new Set(['search','sharer','dialog','share','login','help','legal','about','privacy','groups','events','marketplace','watch','hashtag','stories','notifications','settings','find-friends','people','ad']);
+const SOCIAL_SEARCH_SKIP_IG = new Set(['p','explore','reel','tv','stories','reels','accounts','help','direct','_explore','hashtag']);
+
+async function searchSocialMedia(name, city) {
+  const socials = {};
+  if (!name) return socials;
+  const location = city ? city.split(',')[0].trim() : '';
+
+  // Bing Web Search API (free 1000/mo on Azure F1)
+  if (process.env.BING_API_KEY) {
+    try {
+      const q = `"${name}" ${location} site:facebook.com OR site:instagram.com`;
+      const r = await axios.get('https://api.bing.microsoft.com/v7.0/search', {
+        params: { q, count: 10, responseFilter: 'Webpages' },
+        headers: { 'Ocp-Apim-Subscription-Key': process.env.BING_API_KEY },
+        timeout: 6000,
+      });
+      for (const result of r.data.webPages?.value || []) {
+        const u = result.url || '';
+        if (!socials.facebook && u.includes('facebook.com')) {
+          const m = u.match(/facebook\.com\/(pages\/[^/?&]+\/\d+|[a-zA-Z0-9._-]+)/);
+          const slug = m?.[1]?.split('/')[0];
+          if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) socials.facebook = `https://facebook.com/${m[1]}`;
+        }
+        if (!socials.instagram && u.includes('instagram.com')) {
+          const m = u.match(/instagram\.com\/([a-zA-Z0-9._]+)/);
+          if (m && !SOCIAL_SEARCH_SKIP_IG.has(m[1].toLowerCase())) socials.instagram = `https://instagram.com/${m[1]}`;
+        }
+        if (socials.facebook && socials.instagram) break;
+      }
+      return socials;
+    } catch (e) { console.error('[social-search] Bing API:', e.message); }
+  }
+
+  // Fallback: scrape Bing HTML (no key needed)
+  try {
+    const q = encodeURIComponent(`"${name}" ${location} facebook instagram`);
+    const html = await fetchHtml(`https://www.bing.com/search?q=${q}&count=10`);
+    const fbUrls = html.match(/https?:\/\/(?:www\.)?facebook\.com\/(?:pages\/[^/?&"'\s<>]+\/\d+|[a-zA-Z0-9._-]+)/g) || [];
+    const igUrls = html.match(/https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9._]+)/g) || [];
+    for (const u of fbUrls) {
+      const slug = u.split('facebook.com/')[1]?.split(/[/?]/)[0];
+      if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) { socials.facebook = u.split('?')[0]; break; }
+    }
+    for (const u of igUrls) {
+      const slug = u.split('instagram.com/')[1]?.split(/[/?]/)[0];
+      if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) { socials.instagram = u.split('?')[0]; break; }
+    }
+  } catch (e) { console.error('[social-search] Bing scrape:', e.message); }
+
+  return socials;
+}
+
 async function fetchHtml(pageUrl) {
   const resp = await axios.get(pageUrl, {
     timeout: 8000,
@@ -920,8 +973,8 @@ async function fetchHtml(pageUrl) {
 }
 
 app.get('/api/fetch-email', async (req, res) => {
-  const { url, facebook, fsqId } = req.query;
-  if (!url && !facebook && !fsqId) return res.json({ email: null });
+  const { url, facebook, fsqId, name, city } = req.query;
+  if (!url && !facebook && !fsqId && !name) return res.json({ email: null });
 
   // Priority 1: FSQ place data (structured, authoritative)
   if (fsqId && !fsqId.startsWith('osm-') && !fsqId.startsWith('here:') && !fsqId.startsWith('geo-') && process.env.FOURSQUARE_API_KEY) {
@@ -973,6 +1026,26 @@ app.get('/api/fetch-email', async (req, res) => {
         if (c[k]) detailsSocials[k] = c[k].startsWith('http') ? c[k] : `${prefix}${c[k]}`;
       });
     } catch {}
+
+    // Google Places fallback: get website/phone when Geoapify had nothing
+    if (!detailsWebsite && name && process.env.GOOGLE_PLACES_API_KEY) {
+      try {
+        const input = [name, city].filter(Boolean).join(' ');
+        const r = await axios.get('https://maps.googleapis.com/maps/api/place/findplacefromtext/json', {
+          params: { input, inputtype: 'textquery', fields: 'website,formatted_phone_number', key: process.env.GOOGLE_PLACES_API_KEY },
+          timeout: 6000,
+        });
+        const c = r.data.candidates?.[0];
+        if (c?.website) {
+          const raw = c.website;
+          detailsWebsite = sanitizeWebsite(raw) || (raw.includes('instagram.com') || raw.includes('facebook.com') ? raw : null);
+          // If GMB website IS a social profile, capture it directly
+          if (raw.includes('instagram.com')) { const m = raw.match(/instagram\.com\/([a-zA-Z0-9._]+)/); if (m) detailsSocials.instagram = detailsSocials.instagram || `https://instagram.com/${m[1]}`; }
+          if (raw.includes('facebook.com'))  { const m = raw.match(/facebook\.com\/([a-zA-Z0-9._-]+)/);  if (m) detailsSocials.facebook  = detailsSocials.facebook  || `https://facebook.com/${m[1]}`; }
+        }
+        if (c?.formatted_phone_number && !detailsPhone) detailsPhone = c.formatted_phone_number;
+      } catch {}
+    }
   }
 
   // Priority 3: Scrape website pages + Facebook in parallel
@@ -1045,6 +1118,12 @@ app.get('/api/fetch-email', async (req, res) => {
     const { socials, phone } = extractSocials(html);
     Object.entries(socials).forEach(([k, v]) => { if (v && !foundSocials[k]) foundSocials[k] = v; });
     if (phone && !foundPhone) foundPhone = phone;
+  }
+
+  // Web search for Facebook/Instagram when website scraping found nothing
+  if (name && !foundSocials.facebook && !foundSocials.instagram) {
+    const searched = await searchSocialMedia(name, city);
+    Object.entries(searched).forEach(([k, v]) => { if (v && !foundSocials[k]) foundSocials[k] = v; });
   }
 
   if (foundEmail) return res.json({ email: foundEmail, socials: foundSocials, phone: foundPhone });
