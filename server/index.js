@@ -292,14 +292,9 @@ async function fsqSearchNear(query, near) {
       Accept: 'application/json',
       'X-Places-Api-Version': '2025-06-17',
     },
-    params: {
-      query, near, limit: 50,
-      fields: 'name,location,categories,geocodes,tel,website,link,social_media,closed_bucket',
-    },
+    params: { query, near, limit: 50 },
   });
-  return (response.data.results || [])
-    .filter(p => !CLOSED_BUCKETS.has(p.closed_bucket))  // drop permanently closed
-    .map(p => mapFsqPlace(p, query));
+  return (response.data.results || []).map(p => mapFsqPlace(p, query));
 }
 
 async function foursquareSearch(query, city, state) {
@@ -423,6 +418,23 @@ app.get('/api/places-search', async (req, res) => {
     const status = err.response?.status || 'no-status';
     console.error(`[search] ERROR at ${url} → HTTP ${status}: ${err.message}`);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Address Geocoding ──────────────────────────────────────────────────────────
+app.get('/api/geocode', async (req, res) => {
+  const { address } = req.query;
+  if (!address) return res.json({ lat: null, lng: null });
+  try {
+    const resp = await axios.get('https://nominatim.openstreetmap.org/search', {
+      params: { q: address, format: 'json', limit: 1, countrycodes: 'us' },
+      headers: { 'User-Agent': 'LeadForge/1.0', Accept: '*/*' },
+      timeout: 8000,
+    });
+    const r = resp.data[0];
+    res.json(r ? { lat: parseFloat(r.lat), lng: parseFloat(r.lon) } : { lat: null, lng: null });
+  } catch {
+    res.json({ lat: null, lng: null });
   }
 });
 
