@@ -287,6 +287,105 @@ function mapFsqPlace(p, query) {
 
 const CLOSED_BUCKETS = new Set(['VeryLikelyClosed', 'LikelyClosed']);
 
+// ── Geoapify Places ───────────────────────────────────────────────────────────
+const GEOAPIFY_CATEGORY_MAP = [
+  [/nail/,                              'commercial.beauty.nail_salon'],
+  [/hair|salon/,                        'commercial.beauty.hairdresser'],
+  [/barber/,                            'commercial.beauty.hairdresser'],
+  [/spa|massage|acupuncture/,           'commercial.beauty'],
+  [/tanning/,                           'commercial.beauty'],
+  [/gym|fitness|crossfit|yoga|pilates/, 'leisure.fitness'],
+  [/cafe|coffee/,                       'commercial.food.cafe'],
+  [/bakery/,                            'commercial.food.bakery'],
+  [/fast.?food|burger/,                 'commercial.food.fast_food'],
+  [/bar|pub/,                           'commercial.food.bar'],
+  [/pizza|restaurant|dining|sushi|chinese|korean|vietnamese|mexican|thai|bbq/, 'commercial.food.restaurant'],
+  [/dentist|dental|orthodontist/,       'healthcare.dentist'],
+  [/doctor|clinic|urgent|chiropractor/, 'healthcare.clinic_or_praxis'],
+  [/pharmacy/,                          'healthcare.pharmacy'],
+  [/vet/,                               'healthcare.veterinary'],
+  [/pet|grooming/,                      'commercial.pet'],
+  [/auto|car repair|mechanic|oil change|tire/, 'service.vehicle.car_repair'],
+  [/car.?wash/,                         'service.vehicle.car_wash'],
+  [/florist|flower/,                    'commercial.shopping.florist'],
+  [/grocery|supermarket/,               'commercial.supermarket'],
+  [/laundry|dry.?clean/,               'service.laundry'],
+  [/real.?estate|realtor/,              'commercial.estate_agent'],
+  [/lawyer|attorney/,                   'office.lawyer'],
+  [/insurance/,                         'office.insurance'],
+  [/cleaning|landscaping|pest/,         'service'],
+  [/daycare|preschool/,                 'education.childcare'],
+  [/tutoring/,                          'education'],
+];
+
+function queryToGeoapifyCategory(query) {
+  const q = query.toLowerCase();
+  const match = GEOAPIFY_CATEGORY_MAP.find(([re]) => re.test(q));
+  return match ? match[1] : 'commercial';
+}
+
+function mapGeoapifyPlace(feature, query) {
+  const p = feature.properties;
+  const [lng, lat] = feature.geometry?.coordinates || [null, null];
+  const street  = [p.housenumber, p.street].filter(Boolean).join(' ');
+  const address = [street, p.city, p.state_code, p.postcode].filter(Boolean).join(', ') || p.formatted || '';
+  const rawCat  = (p.categories || [])[0] || '';
+  const bizType = rawCat.split('.').pop().replace(/_/g, ' ') || query;
+  return {
+    fsqId:         `geo-${p.place_id || Math.random().toString(36).slice(2)}`,
+    businessName:  p.name || p.address_line1 || '',
+    address,
+    city:          [p.city, p.state_code].filter(Boolean).join(', '),
+    lat:           lat   || null,
+    lng:           lng   || null,
+    phone:         p.phone     || p.contact?.phone    || null,
+    websiteUrl:    sanitizeWebsite(p.website || p.contact?.website || null),
+    businessType:  bizType,
+    foursquareUrl: null,
+    socialMedia:   { instagram: null, facebook: null, twitter: null, tiktok: null, snapchat: null, youtube: null, linkedin: null, whatsapp: null, pinterest: null, threads: null },
+  };
+}
+
+async function geoapifySearchNear(query, lat, lng) {
+  const category = queryToGeoapifyCategory(query);
+  const response = await axios.get('https://api.geoapify.com/v2/places', {
+    params: {
+      categories: category,
+      filter:     `circle:${lng},${lat},30000`,
+      limit:      100,
+      apiKey:     process.env.GEOAPIFY_API_KEY,
+    },
+    timeout: 10000,
+  });
+  return (response.data.features || [])
+    .map(f => mapGeoapifyPlace(f, query))
+    .filter(b => b.businessName);
+}
+
+async function geoapifySearch(query, city, state) {
+  if (city.trim()) {
+    const geo = await geocodeCity(city, state);
+    return geoapifySearchNear(query, geo.lat, geo.lon);
+  }
+  const hubs = STATE_HUBS[state] || [state];
+  console.log(`[search] state-wide Geoapify: querying ${hubs.length} hubs in ${state}`);
+  const results = [];
+  const seen = new Set();
+  for (const hub of hubs) {
+    try {
+      const geo  = await geocodeCity(hub, state);
+      const hits = await geoapifySearchNear(query, geo.lat, geo.lon);
+      for (const b of hits) {
+        if (!seen.has(b.fsqId)) { seen.add(b.fsqId); results.push(b); }
+      }
+    } catch (err) {
+      console.error(`[geo] ${hub} failed: ${err.response?.status ?? 'err'} ${err.message}`);
+    }
+    await new Promise(r => setTimeout(r, 150));
+  }
+  return results;
+}
+
 // ── HERE Places ───────────────────────────────────────────────────────────────
 function mapHerePlace(item, query) {
   const contacts = item.contacts?.[0] || {};
@@ -408,8 +507,22 @@ app.get('/api/places-search', async (req, res) => {
     return res.json({ ...cached.data, fromCache: true });
   }
 
+  const hasGeo  = !!process.env.GEOAPIFY_API_KEY;
   const hasHere = !!process.env.HERE_API_KEY;
   const hasFsq  = !!process.env.FOURSQUARE_API_KEY;
+
+  if (hasGeo) {
+    try {
+      console.log(`[search] using Geoapify for: ${query} in ${city || state}`);
+      const businesses = await geoapifySearch(query, city, state);
+      console.log(`[search] Geoapify returned ${businesses.length} results`);
+      const payload = { businesses, provider: 'geoapify' };
+      searchCache.set(cacheKey, { data: payload, ts: Date.now() });
+      return res.json(payload);
+    } catch (err) {
+      console.error('[search] Geoapify failed, falling back:', err.message);
+    }
+  }
 
   if (hasHere) {
     try {
@@ -511,7 +624,7 @@ app.get('/api/geocode', async (req, res) => {
 // ── FSQ Place Status (closed_bucket) ──────────────────────────────────────────
 app.get('/api/place-status', async (req, res) => {
   const { fsqId } = req.query;
-  if (!fsqId || fsqId.startsWith('osm-') || fsqId.startsWith('here:') || !process.env.FOURSQUARE_API_KEY) {
+  if (!fsqId || fsqId.startsWith('osm-') || fsqId.startsWith('here:') || fsqId.startsWith('geo-') || !process.env.FOURSQUARE_API_KEY) {
     return res.json({ status: 'unknown' });
   }
   try {
@@ -533,7 +646,7 @@ app.get('/api/place-status', async (req, res) => {
 // ── FSQ Place Social Media Lookup ─────────────────────────────────────────────
 app.get('/api/place-socials', async (req, res) => {
   const { fsqId } = req.query;
-  if (!fsqId || fsqId.startsWith('osm-') || fsqId.startsWith('here:') || !process.env.FOURSQUARE_API_KEY) {
+  if (!fsqId || fsqId.startsWith('osm-') || fsqId.startsWith('here:') || fsqId.startsWith('geo-') || !process.env.FOURSQUARE_API_KEY) {
     return res.json({ socialMedia: {} });
   }
   try {
@@ -774,7 +887,7 @@ app.get('/api/fetch-email', async (req, res) => {
   if (!url && !facebook && !fsqId) return res.json({ email: null });
 
   // Priority 1: FSQ place data (structured, authoritative)
-  if (fsqId && !fsqId.startsWith('osm-') && !fsqId.startsWith('here:') && process.env.FOURSQUARE_API_KEY) {
+  if (fsqId && !fsqId.startsWith('osm-') && !fsqId.startsWith('here:') && !fsqId.startsWith('geo-') && process.env.FOURSQUARE_API_KEY) {
     try {
       const r = await axios.get(`https://places-api.foursquare.com/places/${fsqId}`, {
         headers: {
