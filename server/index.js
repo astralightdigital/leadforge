@@ -940,21 +940,26 @@ async function searchSocialMedia(name, city) {
     } catch (e) { console.error('[social-search] Bing API:', e.message); }
   }
 
-  // Fallback: scrape Bing HTML (no key needed)
+  // Fallback: DuckDuckGo HTML (puts real URLs in hrefs, scraper-friendly)
   try {
     const q = encodeURIComponent(`"${name}" ${location} facebook instagram`);
-    const html = await fetchHtml(`https://www.bing.com/search?q=${q}&count=10`);
-    const fbUrls = html.match(/https?:\/\/(?:www\.)?facebook\.com\/(?:pages\/[^/?&"'\s<>]+\/\d+|[a-zA-Z0-9._-]+)/g) || [];
-    const igUrls = html.match(/https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9._]+)/g) || [];
-    for (const u of fbUrls) {
-      const slug = u.split('facebook.com/')[1]?.split(/[/?]/)[0];
-      if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) { socials.facebook = u.split('?')[0]; break; }
+    const html = await fetchHtml(`https://html.duckduckgo.com/html/?q=${q}`);
+    // DDG puts destination URLs directly in href and in result__url spans
+    const allUrls = [...(html.match(/(?:https?:\/\/)?(?:www\.)?facebook\.com\/(?:pages\/[^/?&"'\s<>]+\/\d+|[a-zA-Z0-9._-]+)/gi) || []),
+                    ...(html.match(/(?:https?:\/\/)?(?:www\.)?instagram\.com\/[a-zA-Z0-9._]+/gi) || [])];
+    for (const u of allUrls) {
+      const norm = u.startsWith('http') ? u : `https://${u}`;
+      if (!socials.facebook && norm.includes('facebook.com')) {
+        const slug = norm.split('facebook.com/')[1]?.split(/[/?]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) socials.facebook = `https://facebook.com/${slug}`;
+      }
+      if (!socials.instagram && norm.includes('instagram.com')) {
+        const slug = norm.split('instagram.com/')[1]?.split(/[/?]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) socials.instagram = `https://instagram.com/${slug}`;
+      }
+      if (socials.facebook && socials.instagram) break;
     }
-    for (const u of igUrls) {
-      const slug = u.split('instagram.com/')[1]?.split(/[/?]/)[0];
-      if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) { socials.instagram = u.split('?')[0]; break; }
-    }
-  } catch (e) { console.error('[social-search] Bing scrape:', e.message); }
+  } catch (e) { console.error('[social-search] DDG scrape:', e.message); }
 
   return socials;
 }

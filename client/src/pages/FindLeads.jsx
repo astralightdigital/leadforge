@@ -724,13 +724,10 @@ function LeadCard({ lead, added, onAdd }) {
             {lead.socialMedia?.threads   && <a href={lead.socialMedia.threads}   target="_blank" rel="noreferrer" className="text-slate-600 hover:text-slate-800">Threads ↗</a>}
           </div>
         </div>
-      </div>
-
-      <div className="flex justify-end mt-3">
         <button
           onClick={handleAdd}
           disabled={added}
-          className={`py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+          className={`shrink-0 self-center py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
             added
               ? 'bg-teal-500 text-white cursor-default'
               : 'bg-slate-800 hover:bg-slate-700 active:scale-95 text-white'
