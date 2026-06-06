@@ -277,8 +277,10 @@ function mapFsqPlace(p, query) {
       facebook:  sm.facebook_id ? `https://facebook.com/${sm.facebook_id}`     : null,
       twitter:   sm.twitter     ? `https://twitter.com/${sm.twitter}`          : null,
       tiktok:    sm.tiktok      ? `https://tiktok.com/@${sm.tiktok}`           : null,
-      snapchat:  sm.snapchat    ? `https://snapchat.com/add/${sm.snapchat}`     : null,
-      youtube:   sm.youtube     ? `https://youtube.com/${sm.youtube}`           : null,
+      snapchat:  sm.snapchat    ? `https://snapchat.com/add/${sm.snapchat}`    : null,
+      youtube:   sm.youtube     ? `https://youtube.com/${sm.youtube}`          : null,
+      linkedin:  null,
+      whatsapp:  null,
     },
   };
 }
@@ -507,6 +509,29 @@ const EMAIL_BLACKLIST = [
 ];
 const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
 
+// Cloudflare protects emails with a simple XOR cipher — decode it back
+function decodeCfEmail(hex) {
+  if (!hex || hex.length < 4) return '';
+  const key = parseInt(hex.slice(0, 2), 16);
+  let out = '';
+  for (let i = 2; i < hex.length; i += 2) {
+    out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);
+  }
+  return out;
+}
+
+// Link-in-bio hosts — these pages are full of social links but no email
+const LINKINBIO_HOSTS = new Set([
+  'linktr.ee', 'linktree.com', 'bio.link', 'beacons.ai',
+  'allmy.bio', 'taplink.cc', 'milkshake.app', 'shorby.com',
+  'bento.me', 'koji.com', 'later.com', 'campsite.bio',
+]);
+
+function isLinkInBio(url) {
+  try { return LINKINBIO_HOSTS.has(new URL(url).hostname.replace('www.', '')); }
+  catch { return false; }
+}
+
 function extractEmail(html) {
   if (typeof html !== 'string') return null;
 
@@ -540,7 +565,15 @@ function extractEmail(html) {
     } catch {}
   }
 
-  // 3. Deobfuscate common patterns before regex scan
+  // 3. Cloudflare email protection (#data-cfemail and /cdn-cgi/l/email-protection)
+  for (const m of html.matchAll(/data-cfemail=["']([0-9a-f]+)["']/gi)) {
+    const e = clean(decodeCfEmail(m[1])); if (e) return e;
+  }
+  for (const m of html.matchAll(/\/cdn-cgi\/l\/email-protection#([0-9a-f]+)/gi)) {
+    const e = clean(decodeCfEmail(m[1])); if (e) return e;
+  }
+
+  // 4. Deobfuscate common patterns before regex scan
   const deob = html
     .replace(/\[at\]/gi, '@').replace(/\(at\)/gi, '@').replace(/\bat\b/g, '@')
     .replace(/\[dot\]/gi, '.').replace(/\(dot\)/gi, '.');
@@ -578,6 +611,26 @@ function parseSocialLink(raw, socials) {
     const m = link.match(/youtube\.com\/(?:channel\/|user\/|c\/|@)?([A-Za-z0-9_@-]+)/);
     if (m && m[1] && !SOCIAL_SKIP.has(m[1].toLowerCase())) socials.youtube = link;
   }
+  if (!socials.linkedin && low.includes('linkedin.com/company/')) {
+    const m = link.match(/linkedin\.com\/company\/([\w-]+)/);
+    if (m && m[1]) socials.linkedin = `https://linkedin.com/company/${m[1]}`;
+  }
+  if (!socials.whatsapp && (low.includes('wa.me/') || low.includes('whatsapp.com/send'))) {
+    const m = link.match(/wa\.me\/(\d+)/) || link.match(/[?&]phone=(\d+)/);
+    if (m) socials.whatsapp = `https://wa.me/${m[1]}`;
+  }
+  if (!socials.pinterest && low.includes('pinterest.com')) {
+    const m = link.match(/pinterest\.com\/([A-Za-z0-9_.-]+)/);
+    if (m && !SOCIAL_SKIP.has(m[1].toLowerCase()) && m[1] !== 'pin') {
+      socials.pinterest = `https://pinterest.com/${m[1]}`;
+    }
+  }
+  if (!socials.threads && low.includes('threads.net')) {
+    const m = link.match(/threads\.net\/@?([A-Za-z0-9_.-]+)/);
+    if (m && !SOCIAL_SKIP.has(m[1].toLowerCase())) {
+      socials.threads = `https://threads.net/@${m[1].replace(/^@/, '')}`;
+    }
+  }
 }
 
 function extractSocials(html) {
@@ -613,8 +666,23 @@ function extractSocials(html) {
   }
 
   // Priority 4: generic href scan
-  for (const raw of (html.match(/https?:\/\/(?:www\.)?(?:instagram|facebook|twitter|x|tiktok|youtube|snapchat)\.com\/[^\s"'<>)]+/gi) || [])) {
+  for (const raw of (html.match(/https?:\/\/(?:www\.)?(?:instagram|facebook|twitter|x|tiktok|youtube|snapchat|linkedin|pinterest)\.com\/[^\s"'<>)]+|https?:\/\/(?:www\.)?threads\.net\/[^\s"'<>)]+|https?:\/\/wa\.me\/\d+/gi) || [])) {
     parseSocialLink(raw, socials);
+  }
+
+  // tel: href — most reliable phone source outside JSON-LD
+  if (!phone) {
+    const m = html.match(/href=["']tel:([+\d\s\-().]{7,20})["']/i);
+    if (m) {
+      const raw = m[1].trim();
+      if (raw.replace(/\D/g, '').length >= 10) phone = raw;
+    }
+  }
+
+  // Plain-text US phone pattern as last resort
+  if (!phone) {
+    const m = html.match(/\(?\b\d{3}\b\)?[\s.\-]\d{3}[\s.\-]\d{4}\b/);
+    if (m) phone = m[0].trim();
   }
 
   return { socials, phone };
@@ -667,10 +735,38 @@ app.get('/api/fetch-email', async (req, res) => {
         `${origin}/about`,   `${origin}/about-us`,
         `${origin}/reach-us`,`${origin}/get-in-touch`,
         `${origin}/team`,    `${origin}/staff`,
+        `${origin}/location`,`${origin}/locations`,
+        `${origin}/find-us`, `${origin}/info`,
       );
     } catch { candidates.push(url); }
   }
   if (facebook) candidates.push(facebook);
+
+  // If the URL is a link-in-bio service (Linktree, Beacons, etc.), fetch it and
+  // collect all external links — these are the business's actual profiles + real site
+  if (url && isLinkInBio(url)) {
+    try {
+      const bioHtml = await fetchHtml(url).catch(() => '');
+      const bioLinks = [];
+      for (const m of (bioHtml.match(/href=["'](https?:\/\/[^"']+)["']/gi) || [])) {
+        const href = m.match(/href=["'](https?:\/\/[^"']+)["']/i)?.[1];
+        if (!href) continue;
+        try {
+          const host = new URL(href).hostname.replace('www.', '');
+          if (LINKINBIO_HOSTS.has(host)) continue; // skip other bio pages
+          bioLinks.push(href);
+        } catch {}
+      }
+      // Dedupe and add non-social links as extra scrape candidates (real website)
+      const socialHosts = new Set(['instagram.com','facebook.com','twitter.com','x.com','tiktok.com','youtube.com','pinterest.com','threads.net','linkedin.com','snapchat.com','wa.me','whatsapp.com']);
+      for (const link of [...new Set(bioLinks)]) {
+        const host = new URL(link).hostname.replace('www.', '');
+        if (!socialHosts.has(host) && !candidates.includes(link)) {
+          candidates.push(link);
+        }
+      }
+    } catch {}
+  }
 
   // Try sitemap.xml to find real contact page URLs
   if (url) {
@@ -721,19 +817,66 @@ app.get('/api/fetch-email', async (req, res) => {
   res.json({ email: null, socials: foundSocials, phone: foundPhone });
 });
 
+// ── AI Website Auditor ─────────────────────────────────────────────────────────
+app.get('/api/audit-website', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    const origin = new URL(url).origin;
+    const pages = await Promise.allSettled([
+      fetchHtml(url),
+      fetchHtml(`${origin}/contact`).catch(() => ''),
+      fetchHtml(`${origin}/about`).catch(() => ''),
+    ]);
+    const html = pages
+      .flatMap(r => r.status === 'fulfilled' ? [r.value] : [])
+      .join('\n')
+      .slice(0, 12000);
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 400,
+      messages: [{
+        role: 'user',
+        content: `Analyze this small business website for a freelance web developer pitching a redesign.
+URL: ${url}
+HTML:
+${html}
+
+List 3-5 specific, concrete problems visible in the HTML or detectable from the URL. Be precise.
+Examples: "No mobile viewport meta tag", "No contact form or email found", "Built on Wix subdomain", "No phone number on homepage", "No HTTPS"
+
+Reply with ONLY a JSON array of short strings.`,
+      }],
+    });
+
+    let issues;
+    try { issues = JSON.parse(response.content[0].text.trim()); }
+    catch { issues = [response.content[0].text.trim()]; }
+
+    res.json({ issues });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Outreach Message Generator ─────────────────────────────────────────────────
 app.post('/api/generate-message', async (req, res) => {
-  const { name, businessType, city, issueDescription, type } = req.body;
+  const { name, businessType, city, issueDescription, type, issues } = req.body;
   if (!name || !type) {
     return res.status(400).json({ error: 'name and type are required' });
   }
+
+  const issueText = Array.isArray(issues) && issues.length
+    ? `Specific website problems found:\n${issues.map(i => `- ${i}`).join('\n')}`
+    : `Website issue: ${issueDescription}`;
 
   const prompt = `You are a freelance web developer writing a cold outreach message.
 
 Business: ${name}
 Type: ${businessType}
 City: ${city}
-Website issue: ${issueDescription}
+${issueText}
 Message type: ${type}
 
 Write a short, friendly, non-pushy message.

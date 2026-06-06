@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { doc, updateDoc, deleteDoc, arrayUnion, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useLeads } from '../hooks/useLeads';
@@ -16,6 +16,12 @@ const STATUSES = [
 
 const MSG_TYPES = ['Instagram DM', 'Cold Email', 'Walk-in Talking Points'];
 
+const MSG_KEY_MAP = {
+  'Instagram DM':           'instagram',
+  'Cold Email':             'email',
+  'Walk-in Talking Points': 'walkin',
+};
+
 const SCORE_OPTIONS = [
   { score: 5, label: 'No site' },
   { score: 4, label: 'Free builder' },
@@ -24,9 +30,18 @@ const SCORE_OPTIONS = [
   { score: 1, label: 'Has site' },
 ];
 
+const EMPTY_FILTERS = { status: '', quality: '', city: '', type: '', ratings: [], contact: [], contactSearch: '' };
+
 export default function Pipeline() {
   const { leads, loading } = useLeads();
-  const [filters, setFilters] = useState({ status: '', quality: '', city: '', type: '', ratings: [], contact: [], contactSearch: '' });
+
+  const [filters, setFilters] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('lf_pipeline_filters');
+      return saved ? JSON.parse(saved) : EMPTY_FILTERS;
+    } catch { return EMPTY_FILTERS; }
+  });
+
   const [showRatingFilter, setShowRatingFilter]   = useState(false);
   const [showContactFilter, setShowContactFilter] = useState(false);
   const [sortBy, setSortBy]   = useState('dateAdded');
@@ -38,7 +53,24 @@ export default function Pipeline() {
   const [colModal, setColModal]         = useState(false);
   const [syncing, setSyncing]           = useState(false);
   const [syncProgress, setSyncProgress] = useState(null);
-  const [closedModal, setClosedModal]   = useState(null); // list of closed leads
+  const [syncLabel, setSyncLabel]       = useState('');
+  const [closedModal, setClosedModal]   = useState(null);
+  const [maintOpen, setMaintOpen]       = useState(false);
+  const [auditMap, setAuditMap]         = useState({});
+  const [batchModal, setBatchModal]     = useState(null);
+
+  // Persist filters to sessionStorage
+  useEffect(() => {
+    try { sessionStorage.setItem('lf_pipeline_filters', JSON.stringify(filters)); } catch {}
+  }, [filters]);
+
+  // Close maintenance dropdown on outside click
+  useEffect(() => {
+    if (!maintOpen) return;
+    const handler = () => setMaintOpen(false);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [maintOpen]);
 
   // ── Filtering ──────────────────────────────────────────────────────────────
   function toggleRating(score) {
@@ -61,7 +93,8 @@ export default function Pipeline() {
       const sm = l.socialMedia || {};
       const haystack = [
         l.discoveredEmail, l.phone,
-        sm.instagram, sm.facebook, sm.twitter, sm.tiktok, sm.snapchat, sm.youtube,
+        sm.instagram, sm.facebook, sm.twitter, sm.tiktok,
+        sm.snapchat, sm.youtube, sm.linkedin, sm.whatsapp,
       ].filter(Boolean).join(' ').toLowerCase();
       if (!haystack.includes(needle)) return false;
     }
@@ -69,15 +102,19 @@ export default function Pipeline() {
       const sm = l.socialMedia || {};
       const hasSocial = Object.values(sm).some(Boolean);
       const checks = {
-        email:    !!l.discoveredEmail,
-        phone:    !!l.phone,
-        instagram:!!sm.instagram,
-        facebook: !!sm.facebook,
-        twitter:  !!sm.twitter,
-        tiktok:   !!sm.tiktok,
-        snapchat: !!sm.snapchat,
-        youtube:  !!sm.youtube,
-        noContact:!l.discoveredEmail && !l.phone && !hasSocial,
+        email:     !!l.discoveredEmail,
+        phone:     !!l.phone,
+        instagram: !!sm.instagram,
+        facebook:  !!sm.facebook,
+        twitter:   !!sm.twitter,
+        tiktok:    !!sm.tiktok,
+        snapchat:  !!sm.snapchat,
+        youtube:   !!sm.youtube,
+        linkedin:  !!sm.linkedin,
+        whatsapp:  !!sm.whatsapp,
+        pinterest: !!sm.pinterest,
+        threads:   !!sm.threads,
+        noContact: !l.discoveredEmail && !l.phone && !hasSocial,
       };
       if (!filters.contact.some(c => checks[c])) return false;
     }
@@ -93,7 +130,6 @@ export default function Pipeline() {
       const dB = b.contactedAt ? daysSince(b.contactedAt) : -1;
       return (dB - dA) * dir;
     }
-    // dateAdded default
     return (new Date(b.dateAdded) - new Date(a.dateAdded)) * dir;
   });
 
@@ -123,7 +159,7 @@ export default function Pipeline() {
   async function findClosed() {
     const fsqLeads = leads.filter(l => l.fsqId && !l.fsqId.startsWith('osm-'));
     if (!fsqLeads.length) { showToast('No FSQ leads to check'); return; }
-    setSyncing(true);
+    setSyncing(true); setSyncLabel('Find Closed');
     setSyncProgress({ done: 0, total: fsqLeads.length });
 
     const closed = [];
@@ -157,14 +193,11 @@ export default function Pipeline() {
   }
 
   async function fixJunkUrls() {
-    setSyncing(true);
+    setSyncing(true); setSyncLabel('Fix URLs');
     setSyncProgress({ done: 0, total: '…' });
-
     try {
       const snapshot = await getDocs(collection(db, 'leads'));
       const toFix = [];
-
-      const badWebsite = id => false; // defined below via closure
       const junkUrl = url => {
         if (!url) return false;
         const low = url.toLowerCase();
@@ -180,14 +213,12 @@ export default function Pipeline() {
       };
       const junkEmail = email => {
         if (!email) return false;
-        // Must contain @ and not contain URL-like patterns
         return !email.includes('@') ||
           email.includes('%2F') || email.includes('amazonaws') ||
           email.includes('hubbiz') || email.includes('s3.') ||
           email.includes('http') || email.includes('.jpg') ||
           email.includes('.png');
       };
-
       snapshot.forEach(docSnap => {
         const data = docSnap.data();
         const update = {};
@@ -202,7 +233,6 @@ export default function Pipeline() {
         }
         if (Object.keys(update).length) toFix.push({ id: docSnap.id, update });
       });
-
       if (toFix.length > 0) {
         const b = writeBatch(db);
         toFix.forEach(({ id, update }) => b.update(doc(db, 'leads', id), update));
@@ -214,18 +244,49 @@ export default function Pipeline() {
     } catch (err) {
       alert('Error: ' + err.message);
     }
-
     setSyncing(false);
     setSyncProgress(null);
+  }
+
+  async function rescanSocials() {
+    const toScan = leads.filter(l =>
+      l.websiteUrl && Object.values(l.socialMedia || {}).filter(Boolean).length < 2
+    );
+    if (!toScan.length) { showToast('No leads to scan for socials'); return; }
+    setSyncing(true); setSyncLabel('Rescan Socials');
+    setSyncProgress({ done: 0, total: toScan.length });
+    const BATCH = 4;
+    for (let i = 0; i < toScan.length; i += BATCH) {
+      await Promise.all(
+        toScan.slice(i, i + BATCH).map(async lead => {
+          try {
+            const q = new URLSearchParams();
+            if (lead.websiteUrl)            q.set('url',      lead.websiteUrl);
+            if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
+            if (![...q.keys()].length) return;
+            const res = await fetch(api(`/api/fetch-email?${q}`));
+            const { socials, phone } = await res.json();
+            const upd = {};
+            if (socials) {
+              Object.entries(socials).forEach(([k, v]) => { if (v) upd[`socialMedia.${k}`] = v; });
+            }
+            if (phone && !lead.phone && !lead.discoveredPhone) upd.discoveredPhone = phone;
+            if (Object.keys(upd).length) await updateDoc(doc(db, 'leads', lead.id), upd);
+          } catch {}
+        })
+      );
+      setSyncProgress({ done: Math.min(i + BATCH, toScan.length), total: toScan.length });
+    }
+    setSyncing(false);
+    setSyncProgress(null);
+    showToast('Social rescan complete');
   }
 
   async function rescanEmails() {
     const toScan = leads.filter(l => !l.discoveredEmail);
     if (!toScan.length) { showToast('All leads already have emails'); return; }
-
-    setSyncing(true);
+    setSyncing(true); setSyncLabel('Rescan Emails');
     setSyncProgress({ done: 0, total: toScan.length });
-
     const BATCH = 4;
     for (let i = 0; i < toScan.length; i += BATCH) {
       await Promise.all(
@@ -240,7 +301,9 @@ export default function Pipeline() {
             const { email, guessed, socials, phone } = await res.json();
             const upd = {};
             if (email) { upd.discoveredEmail = email; upd.emailGuessed = !!guessed; }
-            if (socials && Object.values(socials).some(Boolean)) upd.socialMedia = socials;
+            if (socials) {
+              Object.entries(socials).forEach(([k, v]) => { if (v) upd[`socialMedia.${k}`] = v; });
+            }
             if (phone && !lead.phone) upd.discoveredPhone = phone;
             if (Object.keys(upd).length) await updateDoc(doc(db, 'leads', lead.id), upd);
           } catch {}
@@ -248,7 +311,6 @@ export default function Pipeline() {
       );
       setSyncProgress({ done: Math.min(i + BATCH, toScan.length), total: toScan.length });
     }
-
     setSyncing(false);
     setSyncProgress(null);
     showToast('Email rescan complete');
@@ -257,31 +319,26 @@ export default function Pipeline() {
   async function fixCoords() {
     const missing = leads.filter(l => l.lat == null || l.lng == null);
     if (!missing.length) { showToast('All leads already have coordinates'); return; }
-
-    setSyncing(true);
+    setSyncing(true); setSyncLabel('Fix Coords');
     setSyncProgress({ done: 0, total: missing.length });
     let fixed = 0;
-
     const BATCH = 5;
     for (let i = 0; i < missing.length; i += BATCH) {
       await Promise.all(missing.slice(i, i + BATCH).map(async lead => {
         try {
-          if (lead.fsqId && !lead.fsqId.startsWith('osm-') && process.env.NODE_ENV !== 'test') {
-            // FSQ lead — fetch geocodes from place details
+          if (lead.fsqId && !lead.fsqId.startsWith('osm-')) {
             const res = await fetch(api(`/api/place-socials?fsqId=${lead.fsqId}`));
             const { lat, lng } = await res.json();
             if (lat != null && lng != null) {
               await updateDoc(doc(db, 'leads', lead.id), { lat, lng });
               fixed++;
             } else if (lead.address) {
-              // FSQ had no coords — fallback to address geocoding
               const q = encodeURIComponent(lead.address);
               const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`);
               const data = await r.json();
               if (data[0]) { await updateDoc(doc(db, 'leads', lead.id), { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }); fixed++; }
             }
           } else if (lead.address) {
-            // OSM lead — geocode by address
             const q = encodeURIComponent(lead.address);
             const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`);
             const data = await r.json();
@@ -292,7 +349,6 @@ export default function Pipeline() {
       setSyncProgress({ done: Math.min(i + BATCH, missing.length), total: missing.length });
       await new Promise(r => setTimeout(r, 400));
     }
-
     setSyncing(false);
     setSyncProgress(null);
     showToast(`Fixed ${fixed} of ${missing.length} missing coordinates`);
@@ -306,10 +362,8 @@ export default function Pipeline() {
       )
     );
     if (!toSync.length) { showToast('All FSQ leads already synced'); return; }
-
-    setSyncing(true);
+    setSyncing(true); setSyncLabel('Sync Socials');
     setSyncProgress({ done: 0, total: toSync.length });
-
     const BATCH = 5;
     for (let i = 0; i < toSync.length; i += BATCH) {
       await Promise.all(
@@ -318,7 +372,9 @@ export default function Pipeline() {
             const res = await fetch(api(`/api/place-socials?fsqId=${lead.fsqId}`));
             const { socialMedia, lat, lng } = await res.json();
             const update = {};
-            if (Object.values(socialMedia || {}).some(Boolean)) update.socialMedia = socialMedia;
+            if (Object.values(socialMedia || {}).some(Boolean)) {
+              Object.entries(socialMedia).forEach(([k, v]) => { if (v) update[`socialMedia.${k}`] = v; });
+            }
             if (lat != null && lead.lat == null) update.lat = lat;
             if (lng != null && lead.lng == null) update.lng = lng;
             if (Object.keys(update).length) await updateDoc(doc(db, 'leads', lead.id), update);
@@ -328,7 +384,6 @@ export default function Pipeline() {
       setSyncProgress({ done: Math.min(i + BATCH, toSync.length), total: toSync.length });
       if (i + BATCH < toSync.length) await new Promise(r => setTimeout(r, 350));
     }
-
     setSyncing(false);
     setSyncProgress(null);
     showToast('Sync complete');
@@ -343,38 +398,80 @@ export default function Pipeline() {
     setNoteInputs(prev => ({ ...prev, [leadId]: '' }));
   }
 
-  // ── Message generation ─────────────────────────────────────────────────────
-  async function generateMessage(lead, type) {
-    setMsgModal({ leadId: lead.id, type, loading: true, result: null });
+  // ── AI Site Audit ──────────────────────────────────────────────────────────
+  async function auditSite(lead) {
+    if (!lead.websiteUrl) return;
+    setAuditMap(prev => ({ ...prev, [lead.id]: { loading: true, issues: null } }));
+    try {
+      const res = await fetch(api(`/api/audit-website?url=${encodeURIComponent(lead.websiteUrl)}`));
+      const data = await res.json();
+      setAuditMap(prev => ({ ...prev, [lead.id]: { loading: false, issues: data.issues || null } }));
+    } catch {
+      setAuditMap(prev => ({ ...prev, [lead.id]: { loading: false, issues: null } }));
+    }
+  }
 
+  // ── Message generation ─────────────────────────────────────────────────────
+  async function generateMessage(lead, type, issues) {
+    setMsgModal({ leadId: lead.id, type, loading: true, result: null });
     try {
       const res = await fetch(api('/api/generate-message'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: lead.businessName,
-          businessType: lead.businessType,
-          city: lead.city,
+          name:             lead.businessName,
+          businessType:     lead.businessType,
+          city:             lead.city,
           issueDescription: getIssueDescription(lead.siteQuality, lead.websiteUrl),
           type,
+          issues:           issues?.length ? issues : undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
-      const keyMap = {
-        'Instagram DM':          'instagram',
-        'Cold Email':            'email',
-        'Walk-in Talking Points':'walkin',
-      };
-      await updateDoc(doc(db, 'leads', lead.id), {
-        [`generatedMessages.${keyMap[type]}`]: data.message,
-      });
-
+      const key = MSG_KEY_MAP[type];
+      await updateDoc(doc(db, 'leads', lead.id), { [`generatedMessages.${key}`]: data.message });
       setMsgModal(prev => ({ ...prev, loading: false, result: data.message }));
     } catch (err) {
       setMsgModal(prev => ({ ...prev, loading: false, result: `Error: ${err.message}` }));
     }
+  }
+
+  // ── Batch message generation ───────────────────────────────────────────────
+  async function runBatchGenerate(type) {
+    const key = MSG_KEY_MAP[type];
+    const toGenerate = filtered.filter(l => !l.generatedMessages?.[key]);
+    if (!toGenerate.length) {
+      showToast('All leads already have this message type');
+      setBatchModal(prev => prev ? { ...prev, running: false } : prev);
+      return;
+    }
+    setBatchModal(prev => ({ ...prev, total: toGenerate.length, done: 0, errors: 0, running: true, started: true }));
+    for (const lead of toGenerate) {
+      try {
+        const res = await fetch(api('/api/generate-message'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name:             lead.businessName,
+            businessType:     lead.businessType,
+            city:             lead.city,
+            issueDescription: getIssueDescription(lead.siteQuality, lead.websiteUrl),
+            type,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          await updateDoc(doc(db, 'leads', lead.id), { [`generatedMessages.${key}`]: data.message });
+          setBatchModal(prev => prev ? { ...prev, done: prev.done + 1 } : prev);
+        } else {
+          setBatchModal(prev => prev ? { ...prev, done: prev.done + 1, errors: prev.errors + 1 } : prev);
+        }
+      } catch {
+        setBatchModal(prev => prev ? { ...prev, done: prev.done + 1, errors: prev.errors + 1 } : prev);
+      }
+    }
+    setBatchModal(prev => prev ? { ...prev, running: false } : prev);
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -384,54 +481,56 @@ export default function Pipeline() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Pipeline</h2>
           <p className="text-slate-500 text-sm">
             {sorted.length} of {leads.length} lead{leads.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* Maintenance dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setMaintOpen(p => !p)}
+              disabled={syncing}
+              className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {syncing ? (
+                <span>{syncLabel}{syncProgress ? ` ${syncProgress.done}/${syncProgress.total}` : ''}…</span>
+              ) : (
+                <>Tools <svg className={`w-3 h-3 transition-transform ${maintOpen ? 'rotate-180' : ''}`} viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg></>
+              )}
+            </button>
+            {maintOpen && !syncing && (
+              <div className="absolute right-0 top-[calc(100%+4px)] z-30 bg-white border border-slate-200 rounded-xl shadow-lg w-48 py-1 text-sm">
+                {[
+                  { label: 'Rescan Socials',  fn: rescanSocials,  desc: 'Web-scrape missing socials' },
+                  { label: 'Rescan Emails',   fn: rescanEmails,   desc: 'Re-run email extraction' },
+                  { label: 'Sync Socials',    fn: syncSocials,    desc: 'Pull from Foursquare' },
+                  { label: 'Fix Coords',      fn: fixCoords,      desc: 'Geocode missing lat/lng' },
+                  { label: 'Fix URLs',        fn: fixJunkUrls,    desc: 'Remove junk website URLs' },
+                  { label: 'Find Closed',     fn: findClosed,     desc: 'Flag closed businesses', red: true },
+                ].map(({ label, fn, desc, red }) => (
+                  <button
+                    key={label}
+                    onClick={() => { setMaintOpen(false); fn(); }}
+                    className={`w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors ${red ? 'text-red-500' : 'text-slate-700'}`}
+                  >
+                    <span className="block font-medium">{label}</span>
+                    <span className="block text-xs text-slate-400">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button
-            onClick={fixCoords}
+            onClick={() => setBatchModal({ type: 'Instagram DM', total: 0, done: 0, errors: 0, running: false, started: false })}
             disabled={syncing}
             className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
           >
-            {syncing && syncProgress ? `Fixing ${syncProgress.done}/${syncProgress.total}…` : 'Fix Coords'}
-          </button>
-          <button
-            onClick={findClosed}
-            disabled={syncing}
-            className="border border-red-200 hover:border-red-300 bg-white text-red-500 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            {syncing && syncProgress ? `Checking ${syncProgress.done}/${syncProgress.total}…` : 'Find Closed'}
-          </button>
-          <button
-            onClick={fixJunkUrls}
-            disabled={syncing}
-            className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            {syncing && syncProgress
-              ? `Fixing ${syncProgress.done}/${syncProgress.total}…`
-              : 'Fix URLs'}
-          </button>
-          <button
-            onClick={rescanEmails}
-            disabled={syncing}
-            className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            {syncing && syncProgress
-              ? `Scanning ${syncProgress.done}/${syncProgress.total}…`
-              : 'Rescan Emails'}
-          </button>
-          <button
-            onClick={syncSocials}
-            disabled={syncing}
-            className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            {syncing
-              ? `Syncing ${syncProgress?.done}/${syncProgress?.total}…`
-              : 'Sync Socials'}
+            Batch Generate
           </button>
           <button
             onClick={() => setColModal(true)}
@@ -494,7 +593,6 @@ export default function Pipeline() {
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
         />
 
-        {/* Contact toggle */}
         <button
           onClick={() => setShowContactFilter(p => !p)}
           className={`border rounded-lg px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${
@@ -507,7 +605,6 @@ export default function Pipeline() {
           <span className="text-xs text-slate-400">{showContactFilter ? '▲' : '▼'}</span>
         </button>
 
-        {/* Rating toggle */}
         <button
           onClick={() => setShowRatingFilter(prev => !prev)}
           className={`border rounded-lg px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${
@@ -522,7 +619,7 @@ export default function Pipeline() {
 
         {hasFilters && (
           <button
-            onClick={() => { setFilters({ status: '', quality: '', city: '', type: '', ratings: [], contact: [], contactSearch: '' }); setShowRatingFilter(false); setShowContactFilter(false); }}
+            onClick={() => { setFilters(EMPTY_FILTERS); setShowRatingFilter(false); setShowContactFilter(false); }}
             className="text-sm text-red-400 hover:text-red-600"
           >
             Clear filters
@@ -530,7 +627,7 @@ export default function Pipeline() {
         )}
       </div>
 
-      {/* Rating checkboxes (expanded) */}
+      {/* Rating checkboxes */}
       {showRatingFilter && (
         <div className="flex flex-wrap gap-3 mb-4 px-4 py-3 bg-white border border-slate-200 rounded-xl">
           {SCORE_OPTIONS.map(({ score, label }) => (
@@ -557,19 +654,23 @@ export default function Pipeline() {
         </div>
       )}
 
-      {/* Contact checkboxes (expanded) */}
+      {/* Contact checkboxes */}
       {showContactFilter && (
         <div className="flex flex-wrap gap-3 mb-4 px-4 py-3 bg-white border border-slate-200 rounded-xl">
           {[
-            { key: 'phone',    label: 'Phone' },
-            { key: 'email',    label: 'Email' },
-            { key: 'instagram',label: 'Instagram' },
-            { key: 'facebook', label: 'Facebook' },
-            { key: 'twitter',  label: 'X/Twitter' },
-            { key: 'tiktok',   label: 'TikTok' },
-            { key: 'snapchat', label: 'Snapchat' },
-            { key: 'youtube',  label: 'YouTube' },
-            { key: 'noContact',label: 'No Contact Info' },
+            { key: 'phone',     label: 'Phone' },
+            { key: 'email',     label: 'Email' },
+            { key: 'instagram', label: 'Instagram' },
+            { key: 'facebook',  label: 'Facebook' },
+            { key: 'twitter',   label: 'X/Twitter' },
+            { key: 'tiktok',    label: 'TikTok' },
+            { key: 'snapchat',  label: 'Snapchat' },
+            { key: 'youtube',   label: 'YouTube' },
+            { key: 'linkedin',  label: 'LinkedIn' },
+            { key: 'whatsapp',  label: 'WhatsApp' },
+            { key: 'pinterest', label: 'Pinterest' },
+            { key: 'threads',   label: 'Threads' },
+            { key: 'noContact', label: 'No Contact Info' },
           ].map(({ key, label }) => (
             <label key={key} className="flex items-center gap-2 cursor-pointer group select-none">
               <input
@@ -637,7 +738,9 @@ export default function Pipeline() {
                     noteInput={noteInputs[lead.id] || ''}
                     onNoteChange={t => setNoteInputs(prev => ({ ...prev, [lead.id]: t }))}
                     onAddNote={() => addNote(lead.id)}
-                    onGenerate={type => generateMessage(lead, type)}
+                    onGenerate={(type, issues) => generateMessage(lead, type, issues)}
+                    audit={auditMap[lead.id]}
+                    onAudit={() => auditSite(lead)}
                   />
                 ))}
               </tbody>
@@ -658,6 +761,84 @@ export default function Pipeline() {
           onClose={() => setColModal(false)}
           onCopied={() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }}
         />
+      )}
+
+      {/* Batch generate modal */}
+      {batchModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="font-semibold text-slate-800">Batch Generate Outreach</h3>
+              {!batchModal.running && (
+                <button onClick={() => setBatchModal(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+              )}
+            </div>
+            <div className="p-6">
+              {!batchModal.started ? (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-xs text-slate-500 mb-1.5">Message type</label>
+                    <select
+                      value={batchModal.type}
+                      onChange={e => setBatchModal(prev => ({ ...prev, type: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    >
+                      {MSG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  {(() => {
+                    const count = filtered.filter(l => !l.generatedMessages?.[MSG_KEY_MAP[batchModal.type]]).length;
+                    return (
+                      <>
+                        <p className="text-sm text-slate-600 mb-1">
+                          Will generate for <span className="font-semibold text-slate-800">{count}</span> leads in the current filter that don't have this message yet.
+                        </p>
+                        <p className="text-xs text-slate-400 mb-4">Est. cost: ~${(count * 0.001).toFixed(3)}</p>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => runBatchGenerate(batchModal.type)}
+                            disabled={count === 0}
+                            className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white rounded-lg py-2 text-sm font-medium transition-colors"
+                          >
+                            {count === 0 ? 'All done' : `Generate ${count}`}
+                          </button>
+                          <button onClick={() => setBatchModal(null)} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600 mb-3">
+                    Generating <span className="font-medium">{batchModal.type}</span>…
+                  </p>
+                  <div className="w-full bg-slate-100 rounded-full h-2 mb-2">
+                    <div
+                      className="bg-teal-500 h-2 rounded-full transition-all"
+                      style={{ width: `${batchModal.total ? (batchModal.done / batchModal.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 mb-4">
+                    {batchModal.done}/{batchModal.total} done
+                    {batchModal.errors > 0 && ` · ${batchModal.errors} errors`}
+                    {batchModal.running && ' — do not close'}
+                  </p>
+                  {!batchModal.running && (
+                    <button
+                      onClick={() => setBatchModal(null)}
+                      className="w-full bg-slate-800 hover:bg-slate-700 text-white rounded-lg py-2 text-sm font-medium transition-colors"
+                    >
+                      Done
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Closed businesses modal */}
@@ -717,10 +898,13 @@ function Th({ children, sortable, onClick }) {
 function LeadRow({
   lead, expanded, onToggle, onStatusChange, onDelete,
   noteInput, onNoteChange, onAddNote, onGenerate,
+  audit, onAudit,
 }) {
   const [msgType, setMsgType] = useState('Instagram DM');
+  const [confirmDel, setConfirmDel] = useState(false);
   const days = lead.contactedAt ? daysSince(lead.contactedAt) : null;
   const needsFollowUp = lead.status === 'Messaged' && days !== null && days >= 5;
+  const sm = lead.socialMedia || {};
 
   return (
     <>
@@ -791,12 +975,16 @@ function LeadRow({
             ) : (
               <span className="text-slate-400">No email found</span>
             )}
-            {lead.socialMedia?.instagram && <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer" className="text-pink-500 hover:underline block">Instagram ↗</a>}
-            {lead.socialMedia?.facebook  && <a href={lead.socialMedia.facebook}  target="_blank" rel="noreferrer" className="text-blue-500 hover:underline block">Facebook ↗</a>}
-            {lead.socialMedia?.twitter   && <a href={lead.socialMedia.twitter}   target="_blank" rel="noreferrer" className="text-sky-500 hover:underline block">X/Twitter ↗</a>}
-            {lead.socialMedia?.tiktok    && <a href={lead.socialMedia.tiktok}    target="_blank" rel="noreferrer" className="text-slate-800 hover:underline block">TikTok ↗</a>}
-            {lead.socialMedia?.snapchat  && <a href={lead.socialMedia.snapchat}  target="_blank" rel="noreferrer" className="text-yellow-500 hover:underline block">Snapchat ↗</a>}
-            {lead.socialMedia?.youtube   && <a href={lead.socialMedia.youtube}   target="_blank" rel="noreferrer" className="text-red-500 hover:underline block">YouTube ↗</a>}
+            {sm.instagram && <a href={sm.instagram} target="_blank" rel="noreferrer" className="text-pink-500 hover:underline block">Instagram ↗</a>}
+            {sm.facebook  && <a href={sm.facebook}  target="_blank" rel="noreferrer" className="text-blue-500 hover:underline block">Facebook ↗</a>}
+            {sm.twitter   && <a href={sm.twitter}   target="_blank" rel="noreferrer" className="text-sky-500 hover:underline block">X/Twitter ↗</a>}
+            {sm.tiktok    && <a href={sm.tiktok}    target="_blank" rel="noreferrer" className="text-slate-800 hover:underline block">TikTok ↗</a>}
+            {sm.snapchat  && <a href={sm.snapchat}  target="_blank" rel="noreferrer" className="text-yellow-500 hover:underline block">Snapchat ↗</a>}
+            {sm.youtube   && <a href={sm.youtube}   target="_blank" rel="noreferrer" className="text-red-500 hover:underline block">YouTube ↗</a>}
+            {sm.linkedin  && <a href={sm.linkedin}  target="_blank" rel="noreferrer" className="text-sky-700 hover:underline block">LinkedIn ↗</a>}
+            {sm.whatsapp  && <a href={sm.whatsapp}  target="_blank" rel="noreferrer" className="text-green-500 hover:underline block">WhatsApp ↗</a>}
+            {sm.pinterest && <a href={sm.pinterest} target="_blank" rel="noreferrer" className="text-red-500 hover:underline block">Pinterest ↗</a>}
+            {sm.threads   && <a href={sm.threads}   target="_blank" rel="noreferrer" className="text-slate-600 hover:underline block">Threads ↗</a>}
           </div>
         </td>
 
@@ -818,14 +1006,32 @@ function LeadRow({
 
         {/* Actions */}
         <td className="px-4 py-3">
-          <div className="flex items-center gap-3">
-            <button onClick={onToggle} className="text-xs text-slate-400 hover:text-slate-700">
-              {expanded ? 'Collapse' : 'Expand'}
-            </button>
-            <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600">
-              Delete
-            </button>
-          </div>
+          {confirmDel ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-red-600">Delete?</span>
+              <button
+                onClick={() => { onDelete(); setConfirmDel(false); }}
+                className="text-xs font-semibold text-red-600 hover:text-red-800"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirmDel(false)}
+                className="text-xs text-slate-400 hover:text-slate-600"
+              >
+                No
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <button onClick={onToggle} className="text-xs text-slate-400 hover:text-slate-700">
+                {expanded ? 'Collapse' : 'Expand'}
+              </button>
+              <button onClick={() => setConfirmDel(true)} className="text-xs text-red-400 hover:text-red-600">
+                Delete
+              </button>
+            </div>
+          )}
         </td>
       </tr>
 
@@ -835,7 +1041,7 @@ function LeadRow({
           <td colSpan={9} className="px-4 py-5 bg-slate-50 border-t border-b border-slate-200">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-              {/* Left: Details + Outreach */}
+              {/* Left: Details + Audit + Outreach */}
               <div className="space-y-4">
                 <div>
                   <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Details</h4>
@@ -855,18 +1061,60 @@ function LeadRow({
                         View on Foursquare ↗
                       </a>
                     )}
-                    {Object.values(lead.socialMedia || {}).some(Boolean) && (
+                    {Object.values(sm).some(Boolean) && (
                       <div className="flex flex-wrap gap-2 mt-1">
-                        {lead.socialMedia?.instagram && <a href={lead.socialMedia.instagram} target="_blank" rel="noreferrer" className="text-xs text-pink-500 hover:underline">Instagram ↗</a>}
-                        {lead.socialMedia?.facebook  && <a href={lead.socialMedia.facebook}  target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">Facebook ↗</a>}
-                        {lead.socialMedia?.twitter   && <a href={lead.socialMedia.twitter}   target="_blank" rel="noreferrer" className="text-xs text-sky-500 hover:underline">X/Twitter ↗</a>}
-                        {lead.socialMedia?.tiktok    && <a href={lead.socialMedia.tiktok}    target="_blank" rel="noreferrer" className="text-xs text-slate-800 hover:underline">TikTok ↗</a>}
-                        {lead.socialMedia?.snapchat  && <a href={lead.socialMedia.snapchat}  target="_blank" rel="noreferrer" className="text-xs text-yellow-500 hover:underline">Snapchat ↗</a>}
-                        {lead.socialMedia?.youtube   && <a href={lead.socialMedia.youtube}   target="_blank" rel="noreferrer" className="text-xs text-red-500 hover:underline">YouTube ↗</a>}
+                        {sm.instagram && <a href={sm.instagram} target="_blank" rel="noreferrer" className="text-xs text-pink-500 hover:underline">Instagram ↗</a>}
+                        {sm.facebook  && <a href={sm.facebook}  target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">Facebook ↗</a>}
+                        {sm.twitter   && <a href={sm.twitter}   target="_blank" rel="noreferrer" className="text-xs text-sky-500 hover:underline">X/Twitter ↗</a>}
+                        {sm.tiktok    && <a href={sm.tiktok}    target="_blank" rel="noreferrer" className="text-xs text-slate-800 hover:underline">TikTok ↗</a>}
+                        {sm.snapchat  && <a href={sm.snapchat}  target="_blank" rel="noreferrer" className="text-xs text-yellow-500 hover:underline">Snapchat ↗</a>}
+                        {sm.youtube   && <a href={sm.youtube}   target="_blank" rel="noreferrer" className="text-xs text-red-500 hover:underline">YouTube ↗</a>}
+                        {sm.linkedin  && <a href={sm.linkedin}  target="_blank" rel="noreferrer" className="text-xs text-sky-700 hover:underline">LinkedIn ↗</a>}
+                        {sm.whatsapp  && <a href={sm.whatsapp}  target="_blank" rel="noreferrer" className="text-xs text-green-500 hover:underline">WhatsApp ↗</a>}
+                        {sm.pinterest && <a href={sm.pinterest} target="_blank" rel="noreferrer" className="text-xs text-red-500 hover:underline">Pinterest ↗</a>}
+                        {sm.threads   && <a href={sm.threads}   target="_blank" rel="noreferrer" className="text-xs text-slate-600 hover:underline">Threads ↗</a>}
                       </div>
                     )}
                   </div>
                 </div>
+
+                {/* AI Site Audit */}
+                {lead.websiteUrl && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Site Audit</h4>
+                      {!audit && (
+                        <button
+                          onClick={onAudit}
+                          className="text-xs text-teal-600 hover:underline"
+                        >
+                          Analyze with Claude
+                        </button>
+                      )}
+                      {audit && !audit.loading && (
+                        <button onClick={onAudit} className="text-xs text-slate-400 hover:text-teal-600">
+                          Re-run
+                        </button>
+                      )}
+                    </div>
+                    {!audit ? (
+                      <p className="text-xs text-slate-400">Run an AI audit to find specific site problems — makes outreach more personalized.</p>
+                    ) : audit.loading ? (
+                      <p className="text-xs text-slate-400 animate-pulse">Analyzing with Claude Haiku…</p>
+                    ) : audit.issues?.length ? (
+                      <ul className="space-y-1">
+                        {audit.issues.map((issue, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-slate-700">
+                            <span className="text-orange-400 mt-0.5 shrink-0">▸</span>
+                            {issue}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-slate-400">Could not analyze site.</p>
+                    )}
+                  </div>
+                )}
 
                 {/* Generate outreach */}
                 <div>
@@ -880,14 +1128,13 @@ function LeadRow({
                       {MSG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <button
-                      onClick={() => onGenerate(msgType)}
+                      onClick={() => onGenerate(msgType, audit?.issues)}
                       className="bg-teal-600 hover:bg-teal-700 text-white rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors"
                     >
-                      Generate ~$0.001
+                      {audit?.issues?.length ? 'Generate with audit' : 'Generate ~$0.001'}
                     </button>
                   </div>
 
-                  {/* Previously generated messages */}
                   {lead.generatedMessages && (
                     <div className="space-y-2">
                       {lead.generatedMessages.instagram && (
@@ -948,14 +1195,12 @@ function LeadRow({
 
 function SavedMsg({ label, text }) {
   const [copied, setCopied] = useState(false);
-
   function copy() {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   }
-
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-3">
       <div className="flex items-center justify-between mb-1.5">
@@ -971,7 +1216,6 @@ function SavedMsg({ label, text }) {
 
 function MsgModal({ modal, onClose }) {
   const [copied, setCopied] = useState(false);
-
   function copy() {
     if (!modal.result) return;
     navigator.clipboard.writeText(modal.result).then(() => {
@@ -979,7 +1223,6 @@ function MsgModal({ modal, onClose }) {
       setTimeout(() => setCopied(false), 2000);
     });
   }
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl">
@@ -987,7 +1230,6 @@ function MsgModal({ modal, onClose }) {
           <h3 className="font-semibold text-slate-800">{modal.type}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
-
         <div className="p-6">
           {modal.loading ? (
             <div className="py-12 text-center text-slate-400 text-sm">
@@ -1006,10 +1248,7 @@ function MsgModal({ modal, onClose }) {
                 >
                   {copied ? '✓ Copied!' : 'Copy to Clipboard'}
                 </button>
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700"
-                >
+                <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">
                   Close
                 </button>
               </div>
@@ -1074,7 +1313,6 @@ function CopyModal({ leads, onClose, onCopied }) {
           <h3 className="font-semibold text-slate-800">Copy for Google Sheets</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
-
         <div className="p-6">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs text-slate-500">Uncheck any columns you don't need.</p>
@@ -1096,7 +1334,6 @@ function CopyModal({ leads, onClose, onCopied }) {
               </label>
             ))}
           </div>
-
           <div className="flex gap-3 mt-6">
             <button
               onClick={doCopy}
