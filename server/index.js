@@ -311,7 +311,10 @@ async function foursquareSearch(query, city, state) {
 
   console.log(`[search] state-wide FSQ: querying ${hubs.length} hubs in ${state}`);
   const batches = await Promise.all(
-    hubs.map(hub => fsqSearchNear(query, `${hub}, ${state}, USA`).catch(() => []))
+    hubs.map(hub => fsqSearchNear(query, `${hub}, ${state}, USA`).catch(err => {
+      console.error(`[fsq] ${hub} failed — HTTP ${err.response?.status ?? 'no-response'}: ${err.message}`);
+      return [];
+    }))
   );
 
   const seen = new Set();
