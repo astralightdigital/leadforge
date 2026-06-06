@@ -405,15 +405,6 @@ app.get('/api/places-search', async (req, res) => {
       })
       .slice(0, 200);
 
-    // TODO: Google Places enrichment — when API key is available, call Google Places API here
-    // to find missing website URLs using businessName + address as the search query.
-    // For each business where websiteUrl is null:
-    //   const googleRes = await axios.get('https://maps.googleapis.com/maps/api/place/findplacefromtext/json', {
-    //     params: { input: `${b.businessName} ${b.address}`, inputtype: 'textquery',
-    //               fields: 'website', key: process.env.GOOGLE_PLACES_API_KEY }
-    //   });
-    //   b.websiteUrl = googleRes.data.candidates?.[0]?.website || null;
-
     res.json({ businesses });
   } catch (err) {
     const url = err.config?.url || 'unknown';
@@ -815,6 +806,37 @@ app.get('/api/fetch-email', async (req, res) => {
   }
 
   res.json({ email: null, socials: foundSocials, phone: foundPhone });
+});
+
+// ── Google Places Enrichment ───────────────────────────────────────────────────
+// Looks up a business by name + address and returns website + phone from Google.
+// Many no-website businesses list their Instagram URL as their "website" in GMB.
+app.get('/api/google-enrich', async (req, res) => {
+  const { name, address } = req.query;
+  if (!name || !process.env.GOOGLE_PLACES_API_KEY) {
+    return res.json({ website: null, phone: null });
+  }
+  try {
+    const input = [name, address].filter(Boolean).join(' ');
+    const r = await axios.get('https://maps.googleapis.com/maps/api/place/findplacefromtext/json', {
+      params: {
+        input,
+        inputtype:  'textquery',
+        fields:     'website,formatted_phone_number,name',
+        key:        process.env.GOOGLE_PLACES_API_KEY,
+      },
+      timeout: 8000,
+    });
+    const c = r.data.candidates?.[0];
+    if (!c) return res.json({ website: null, phone: null });
+
+    const raw = c.website || null;
+    const website = sanitizeWebsite(raw) || (raw?.includes('instagram.com') ? raw : null);
+    res.json({ website, phone: c.formatted_phone_number || null });
+  } catch (err) {
+    console.error('[google-enrich]', err.message);
+    res.json({ website: null, phone: null });
+  }
 });
 
 // ── AI Website Auditor ─────────────────────────────────────────────────────────

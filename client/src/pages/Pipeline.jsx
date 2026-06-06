@@ -159,6 +159,7 @@ export default function Pipeline() {
   async function findClosed() {
     const fsqLeads = leads.filter(l => l.fsqId && !l.fsqId.startsWith('osm-'));
     if (!fsqLeads.length) { showToast('No FSQ leads to check'); return; }
+    showToast(`Checking ${fsqLeads.length} leads for closures…`);
     setSyncing(true); setSyncLabel('Find Closed');
     setSyncProgress({ done: 0, total: fsqLeads.length });
 
@@ -193,6 +194,7 @@ export default function Pipeline() {
   }
 
   async function fixJunkUrls() {
+    showToast('Scanning for junk URLs and emails…');
     setSyncing(true); setSyncLabel('Fix URLs');
     setSyncProgress({ done: 0, total: '…' });
     try {
@@ -248,11 +250,66 @@ export default function Pipeline() {
     setSyncProgress(null);
   }
 
+  async function googleEnrich() {
+    const toEnrich = leads.filter(l => !l.websiteUrl);
+    if (!toEnrich.length) { showToast('All leads already have websites'); return; }
+    showToast(`Looking up ${toEnrich.length} leads on Google Places…`);
+    setSyncing(true); setSyncLabel('Google Enrich');
+    setSyncProgress({ done: 0, total: toEnrich.length });
+    let found = 0;
+    const BATCH = 5;
+    for (let i = 0; i < toEnrich.length; i += BATCH) {
+      await Promise.all(
+        toEnrich.slice(i, i + BATCH).map(async lead => {
+          try {
+            const q = new URLSearchParams({ name: lead.businessName, address: lead.address || lead.city || '' });
+            const res = await fetch(api(`/api/google-enrich?${q}`));
+            const { website, phone } = await res.json();
+            if (!website && !phone) return;
+            const upd = {};
+            if (website) {
+              upd.websiteUrl   = website;
+              upd.siteQuality  = website.includes('instagram.com') ? 'none' : (website.includes('wix') || website.includes('squarespace') ? 'weak' : 'has');
+              upd.leadScore    = website.includes('instagram.com') ? 5 : undefined;
+              if (upd.leadScore === undefined) delete upd.leadScore;
+            }
+            if (phone && !lead.phone) upd.phone = phone;
+            await updateDoc(doc(db, 'leads', lead.id), upd);
+            found++;
+            // If we got a real website (not Instagram), scrape it for socials + email
+            if (website && !website.includes('instagram.com')) {
+              const fq = new URLSearchParams({ url: website });
+              fetch(api(`/api/fetch-email?${fq}`))
+                .then(r => r.json())
+                .then(({ email, guessed, socials, phone: p }) => {
+                  const u = {};
+                  if (email) { u.discoveredEmail = email; u.emailGuessed = !!guessed; }
+                  if (socials) Object.entries(socials).forEach(([k, v]) => { if (v) u[`socialMedia.${k}`] = v; });
+                  if (p && !lead.phone) u.discoveredPhone = p;
+                  if (Object.keys(u).length) updateDoc(doc(db, 'leads', lead.id), u).catch(() => {});
+                })
+                .catch(() => {});
+            }
+            // If website IS Instagram, store it as a social
+            if (website && website.includes('instagram.com')) {
+              const m = website.match(/instagram\.com\/([A-Za-z0-9_.]+)/);
+              if (m) updateDoc(doc(db, 'leads', lead.id), { 'socialMedia.instagram': website }).catch(() => {});
+            }
+          } catch {}
+        })
+      );
+      setSyncProgress({ done: Math.min(i + BATCH, toEnrich.length), total: toEnrich.length });
+    }
+    setSyncing(false); setSyncProgress(null);
+    showToast(`Google Enrich complete — ${found} leads updated`);
+  }
+
   async function rescanSocials() {
     const toScan = leads.filter(l =>
       l.websiteUrl && Object.values(l.socialMedia || {}).filter(Boolean).length < 2
     );
-    if (!toScan.length) { showToast('No leads to scan for socials'); return; }
+    if (!toScan.length) { showToast('No leads need a social rescan'); return; }
+    showToast(`Scanning ${toScan.length} leads for socials…`);
     setSyncing(true); setSyncLabel('Rescan Socials');
     setSyncProgress({ done: 0, total: toScan.length });
     const BATCH = 4;
@@ -285,6 +342,7 @@ export default function Pipeline() {
   async function rescanEmails() {
     const toScan = leads.filter(l => !l.discoveredEmail);
     if (!toScan.length) { showToast('All leads already have emails'); return; }
+    showToast(`Scanning ${toScan.length} leads for emails…`);
     setSyncing(true); setSyncLabel('Rescan Emails');
     setSyncProgress({ done: 0, total: toScan.length });
     const BATCH = 4;
@@ -319,6 +377,7 @@ export default function Pipeline() {
   async function fixCoords() {
     const missing = leads.filter(l => l.lat == null || l.lng == null);
     if (!missing.length) { showToast('All leads already have coordinates'); return; }
+    showToast(`Geocoding ${missing.length} leads…`);
     setSyncing(true); setSyncLabel('Fix Coords');
     setSyncProgress({ done: 0, total: missing.length });
     let fixed = 0;
@@ -362,6 +421,7 @@ export default function Pipeline() {
       )
     );
     if (!toSync.length) { showToast('All FSQ leads already synced'); return; }
+    showToast(`Syncing ${toSync.length} leads from Foursquare…`);
     setSyncing(true); setSyncLabel('Sync Socials');
     setSyncProgress({ done: 0, total: toSync.length });
     const BATCH = 5;
@@ -492,33 +552,64 @@ export default function Pipeline() {
           {/* Maintenance dropdown */}
           <div className="relative">
             <button
-              onClick={() => setMaintOpen(p => !p)}
-              disabled={syncing}
-              className="border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              onClick={() => !syncing && setMaintOpen(p => !p)}
+              className={`border rounded-lg px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                syncing
+                  ? 'border-teal-300 bg-teal-50 text-teal-700 cursor-default'
+                  : 'border-slate-200 hover:border-slate-300 bg-white text-slate-600'
+              }`}
             >
               {syncing ? (
-                <span>{syncLabel}{syncProgress ? ` ${syncProgress.done}/${syncProgress.total}` : ''}…</span>
+                <>
+                  <svg className="animate-spin w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  <span>
+                    {syncLabel}
+                    {syncProgress && typeof syncProgress.total === 'number'
+                      ? ` ${syncProgress.done}/${syncProgress.total}`
+                      : '…'}
+                  </span>
+                </>
               ) : (
-                <>Tools <svg className={`w-3 h-3 transition-transform ${maintOpen ? 'rotate-180' : ''}`} viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg></>
+                <>
+                  Tools
+                  <svg className={`w-3 h-3 transition-transform ${maintOpen ? 'rotate-180' : ''}`} viewBox="0 0 10 6" fill="none">
+                    <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </>
               )}
             </button>
+
+            {/* Progress bar under the button while running */}
+            {syncing && syncProgress && typeof syncProgress.total === 'number' && syncProgress.total > 0 && (
+              <div className="absolute left-0 right-0 top-[calc(100%+2px)] h-1 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-teal-500 transition-all duration-300"
+                  style={{ width: `${(syncProgress.done / syncProgress.total) * 100}%` }}
+                />
+              </div>
+            )}
+
             {maintOpen && !syncing && (
-              <div className="absolute right-0 top-[calc(100%+4px)] z-30 bg-white border border-slate-200 rounded-xl shadow-lg w-48 py-1 text-sm">
+              <div className="absolute right-0 top-[calc(100%+4px)] z-30 bg-white border border-slate-200 rounded-xl shadow-lg w-52 py-1 text-sm">
                 {[
-                  { label: 'Rescan Socials',  fn: rescanSocials,  desc: 'Web-scrape missing socials' },
-                  { label: 'Rescan Emails',   fn: rescanEmails,   desc: 'Re-run email extraction' },
-                  { label: 'Sync Socials',    fn: syncSocials,    desc: 'Pull from Foursquare' },
-                  { label: 'Fix Coords',      fn: fixCoords,      desc: 'Geocode missing lat/lng' },
-                  { label: 'Fix URLs',        fn: fixJunkUrls,    desc: 'Remove junk website URLs' },
-                  { label: 'Find Closed',     fn: findClosed,     desc: 'Flag closed businesses', red: true },
+                  { label: 'Google Enrich',  fn: googleEnrich,  desc: 'Find websites via Google Places' },
+                  { label: 'Rescan Socials', fn: rescanSocials, desc: 'Web-scrape missing socials' },
+                  { label: 'Rescan Emails',  fn: rescanEmails,  desc: 'Re-run email extraction' },
+                  { label: 'Sync Socials',   fn: syncSocials,   desc: 'Pull from Foursquare' },
+                  { label: 'Fix Coords',     fn: fixCoords,     desc: 'Geocode missing lat/lng' },
+                  { label: 'Fix URLs',       fn: fixJunkUrls,   desc: 'Remove junk website URLs' },
+                  { label: 'Find Closed',    fn: findClosed,    desc: 'Flag closed businesses', red: true },
                 ].map(({ label, fn, desc, red }) => (
                   <button
                     key={label}
-                    onClick={() => { setMaintOpen(false); fn(); }}
-                    className={`w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors ${red ? 'text-red-500' : 'text-slate-700'}`}
+                    onMouseDown={e => { e.stopPropagation(); setMaintOpen(false); fn(); }}
+                    className={`w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors ${red ? 'text-red-500' : 'text-slate-700'}`}
                   >
-                    <span className="block font-medium">{label}</span>
-                    <span className="block text-xs text-slate-400">{desc}</span>
+                    <span className="block font-medium leading-tight">{label}</span>
+                    <span className="block text-xs text-slate-400 mt-0.5">{desc}</span>
                   </button>
                 ))}
               </div>
