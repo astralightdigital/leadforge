@@ -1027,25 +1027,6 @@ app.get('/api/fetch-email', async (req, res) => {
       });
     } catch {}
 
-    // Google Places fallback: get website/phone when Geoapify had nothing
-    if (!detailsWebsite && name && process.env.GOOGLE_PLACES_API_KEY) {
-      try {
-        const input = [name, city].filter(Boolean).join(' ');
-        const r = await axios.get('https://maps.googleapis.com/maps/api/place/findplacefromtext/json', {
-          params: { input, inputtype: 'textquery', fields: 'website,formatted_phone_number', key: process.env.GOOGLE_PLACES_API_KEY },
-          timeout: 6000,
-        });
-        const c = r.data.candidates?.[0];
-        if (c?.website) {
-          const raw = c.website;
-          detailsWebsite = sanitizeWebsite(raw) || (raw.includes('instagram.com') || raw.includes('facebook.com') ? raw : null);
-          // If GMB website IS a social profile, capture it directly
-          if (raw.includes('instagram.com')) { const m = raw.match(/instagram\.com\/([a-zA-Z0-9._]+)/); if (m) detailsSocials.instagram = detailsSocials.instagram || `https://instagram.com/${m[1]}`; }
-          if (raw.includes('facebook.com'))  { const m = raw.match(/facebook\.com\/([a-zA-Z0-9._-]+)/);  if (m) detailsSocials.facebook  = detailsSocials.facebook  || `https://facebook.com/${m[1]}`; }
-        }
-        if (c?.formatted_phone_number && !detailsPhone) detailsPhone = c.formatted_phone_number;
-      } catch {}
-    }
   }
 
   // Priority 3: Scrape website pages + Facebook in parallel
