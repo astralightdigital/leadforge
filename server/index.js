@@ -287,6 +287,61 @@ function mapFsqPlace(p, query) {
 
 const CLOSED_BUCKETS = new Set(['VeryLikelyClosed', 'LikelyClosed']);
 
+// ── HERE Places ───────────────────────────────────────────────────────────────
+function mapHerePlace(item, query) {
+  const contacts = item.contacts?.[0] || {};
+  const phone      = contacts.phone?.[0]?.value || null;
+  const rawSite    = contacts.www?.[0]?.value   || null;
+  const addr       = item.address || {};
+  const street     = [addr.houseNumber, addr.street].filter(Boolean).join(' ');
+  const address    = [street, addr.city, addr.stateCode, addr.postalCode].filter(Boolean).join(', ') || addr.label || '';
+  return {
+    fsqId:         item.id,
+    businessName:  item.title,
+    address,
+    city:          [addr.city, addr.stateCode].filter(Boolean).join(', '),
+    lat:           item.position?.lat || null,
+    lng:           item.position?.lng || null,
+    phone,
+    websiteUrl:    sanitizeWebsite(rawSite),
+    businessType:  item.categories?.find(c => c.primary)?.name || query,
+    foursquareUrl: null,
+    socialMedia:   { instagram: null, facebook: null, twitter: null, tiktok: null, snapchat: null, youtube: null, linkedin: null, whatsapp: null, pinterest: null, threads: null },
+  };
+}
+
+async function hereSearchNear(query, lat, lng) {
+  const response = await axios.get('https://discover.search.hereapi.com/v1/discover', {
+    params: { q: query, in: `circle:${lat},${lng};r=30000`, limit: 100, apiKey: process.env.HERE_API_KEY },
+    timeout: 10000,
+  });
+  return (response.data.items || []).map(item => mapHerePlace(item, query));
+}
+
+async function hereSearch(query, city, state) {
+  if (city.trim()) {
+    const geo = await geocodeCity(city, state);
+    return hereSearchNear(query, geo.lat, geo.lon);
+  }
+  const hubs = STATE_HUBS[state] || [state];
+  console.log(`[search] state-wide HERE: querying ${hubs.length} hubs in ${state}`);
+  const results = [];
+  const seen = new Set();
+  for (const hub of hubs) {
+    try {
+      const geo = await geocodeCity(hub, state);
+      const hits = await hereSearchNear(query, geo.lat, geo.lon);
+      for (const b of hits) {
+        if (!seen.has(b.fsqId)) { seen.add(b.fsqId); results.push(b); }
+      }
+    } catch (err) {
+      console.error(`[here] ${hub} failed: ${err.response?.status ?? 'err'} ${err.message}`);
+    }
+    await new Promise(r => setTimeout(r, 150));
+  }
+  return results;
+}
+
 async function fsqSearchNear(query, near) {
   const response = await axios.get('https://places-api.foursquare.com/places/search', {
     headers: {
@@ -353,7 +408,21 @@ app.get('/api/places-search', async (req, res) => {
     return res.json({ ...cached.data, fromCache: true });
   }
 
-  const hasFsq = !!process.env.FOURSQUARE_API_KEY;
+  const hasHere = !!process.env.HERE_API_KEY;
+  const hasFsq  = !!process.env.FOURSQUARE_API_KEY;
+
+  if (hasHere) {
+    try {
+      console.log(`[search] using HERE for: ${query} in ${city || state}`);
+      const businesses = await hereSearch(query, city, state);
+      console.log(`[search] HERE returned ${businesses.length} results`);
+      const payload = { businesses, provider: 'here' };
+      searchCache.set(cacheKey, { data: payload, ts: Date.now() });
+      return res.json(payload);
+    } catch (err) {
+      console.error('[search] HERE failed, falling back:', err.message);
+    }
+  }
 
   if (hasFsq) {
     try {
@@ -442,7 +511,7 @@ app.get('/api/geocode', async (req, res) => {
 // ── FSQ Place Status (closed_bucket) ──────────────────────────────────────────
 app.get('/api/place-status', async (req, res) => {
   const { fsqId } = req.query;
-  if (!fsqId || fsqId.startsWith('osm-') || !process.env.FOURSQUARE_API_KEY) {
+  if (!fsqId || fsqId.startsWith('osm-') || fsqId.startsWith('here:') || !process.env.FOURSQUARE_API_KEY) {
     return res.json({ status: 'unknown' });
   }
   try {
@@ -464,7 +533,7 @@ app.get('/api/place-status', async (req, res) => {
 // ── FSQ Place Social Media Lookup ─────────────────────────────────────────────
 app.get('/api/place-socials', async (req, res) => {
   const { fsqId } = req.query;
-  if (!fsqId || fsqId.startsWith('osm-') || !process.env.FOURSQUARE_API_KEY) {
+  if (!fsqId || fsqId.startsWith('osm-') || fsqId.startsWith('here:') || !process.env.FOURSQUARE_API_KEY) {
     return res.json({ socialMedia: {} });
   }
   try {
@@ -705,7 +774,7 @@ app.get('/api/fetch-email', async (req, res) => {
   if (!url && !facebook && !fsqId) return res.json({ email: null });
 
   // Priority 1: FSQ place data (structured, authoritative)
-  if (fsqId && !fsqId.startsWith('osm-') && process.env.FOURSQUARE_API_KEY) {
+  if (fsqId && !fsqId.startsWith('osm-') && !fsqId.startsWith('here:') && process.env.FOURSQUARE_API_KEY) {
     try {
       const r = await axios.get(`https://places-api.foursquare.com/places/${fsqId}`, {
         headers: {

@@ -162,7 +162,7 @@ export default function Pipeline() {
   }
 
   async function findClosed() {
-    const fsqLeads = leads.filter(l => l.fsqId && !l.fsqId.startsWith('osm-'));
+    const fsqLeads = leads.filter(l => l.fsqId && !l.fsqId.startsWith('osm-') && !l.fsqId.startsWith('here:'));
     if (!fsqLeads.length) { showToast('No FSQ leads to check'); return; }
     showToast(`Checking ${fsqLeads.length} leads for closures…`);
     setSyncing(true); setSyncLabel('Find Closed');
@@ -356,7 +356,7 @@ export default function Pipeline() {
         toScan.slice(i, i + BATCH).map(async lead => {
           try {
             const q = new URLSearchParams();
-            if (lead.fsqId && !lead.fsqId.startsWith('osm-')) q.set('fsqId', lead.fsqId);
+            if (lead.fsqId && !lead.fsqId.startsWith('osm-') && !lead.fsqId.startsWith('here:')) q.set('fsqId', lead.fsqId);
             if (lead.websiteUrl)            q.set('url',      lead.websiteUrl);
             if (lead.socialMedia?.facebook) q.set('facebook', lead.socialMedia.facebook);
             if (![...q.keys()].length) return;
@@ -390,7 +390,7 @@ export default function Pipeline() {
     for (let i = 0; i < missing.length; i += BATCH) {
       await Promise.all(missing.slice(i, i + BATCH).map(async lead => {
         try {
-          if (lead.fsqId && !lead.fsqId.startsWith('osm-')) {
+          if (lead.fsqId && !lead.fsqId.startsWith('osm-') && !lead.fsqId.startsWith('here:')) {
             const res = await fetch(api(`/api/place-socials?fsqId=${lead.fsqId}`));
             const { lat, lng } = await res.json();
             if (lat != null && lng != null) {
@@ -420,7 +420,7 @@ export default function Pipeline() {
 
   async function syncSocials() {
     const toSync = leads.filter(l =>
-      l.fsqId && !l.fsqId.startsWith('osm-') && (
+      l.fsqId && !l.fsqId.startsWith('osm-') && !l.fsqId.startsWith('here:') && (
         !Object.values(l.socialMedia || {}).some(Boolean) ||
         l.lat == null || l.lng == null
       )
