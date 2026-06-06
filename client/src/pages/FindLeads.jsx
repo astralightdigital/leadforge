@@ -295,17 +295,24 @@ export default function FindLeads() {
         if (enrichAbortRef.current) return;
         try {
           const q = new URLSearchParams();
-          if (lead.businessName) q.set('name', lead.businessName);
-          if (lead.city)         q.set('city', lead.city);
+          if (lead.businessName) q.set('name',   lead.businessName);
+          if (lead.city)         q.set('city',   lead.city);
+          if (lead.websiteUrl)   q.set('url',    lead.websiteUrl);
+          if (lead.fsqId && !lead.fsqId.startsWith('osm-') && !lead.fsqId.startsWith('here:')) q.set('fsqId', lead.fsqId);
           const data = await fetch(api(`/api/fetch-email?${q}`)).then(r => r.json());
-          const update = {};
-          if (data.socials) Object.entries(data.socials).forEach(([k, v]) => { if (v) update[k] = v; });
-          if (Object.keys(update).length) {
-            setResults(prev => prev.map(r =>
-              r.fsqId === lead.fsqId
-                ? { ...r, socialMedia: { ...r.socialMedia, ...update } }
-                : r
-            ));
+          const socialUpdate = {};
+          if (data.socials) Object.entries(data.socials).forEach(([k, v]) => { if (v) socialUpdate[k] = v; });
+          const hasSocial = Object.keys(socialUpdate).length > 0;
+          const hasPhone  = data.phone && !lead.phone;
+          if (hasSocial || hasPhone) {
+            setResults(prev => prev.map(r => {
+              if (r.fsqId !== lead.fsqId) return r;
+              return {
+                ...r,
+                socialMedia: hasSocial ? { ...r.socialMedia, ...socialUpdate } : r.socialMedia,
+                phone: hasPhone ? data.phone : r.phone,
+              };
+            }));
           }
         } catch {}
       }));
