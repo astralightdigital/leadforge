@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { doc, updateDoc, deleteDoc, arrayUnion, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useLeads } from '../hooks/useLeads';
@@ -58,6 +58,7 @@ export default function Pipeline() {
   const [maintOpen, setMaintOpen]       = useState(false);
   const [auditMap, setAuditMap]         = useState({});
   const [batchModal, setBatchModal]     = useState(null);
+  const maintRef = useRef(null);
 
   // Persist filters to sessionStorage
   useEffect(() => {
@@ -67,9 +68,13 @@ export default function Pipeline() {
   // Close maintenance dropdown on outside click
   useEffect(() => {
     if (!maintOpen) return;
-    const handler = () => setMaintOpen(false);
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const handler = (e) => {
+      if (maintRef.current && !maintRef.current.contains(e.target)) {
+        setMaintOpen(false);
+      }
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
   }, [maintOpen]);
 
   // ── Filtering ──────────────────────────────────────────────────────────────
@@ -550,7 +555,7 @@ export default function Pipeline() {
         </div>
         <div className="flex gap-2 flex-wrap items-center">
           {/* Maintenance dropdown */}
-          <div className="relative">
+          <div className="relative" ref={maintRef}>
             <button
               onClick={() => !syncing && setMaintOpen(p => !p)}
               className={`border rounded-lg px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 ${
@@ -605,7 +610,7 @@ export default function Pipeline() {
                 ].map(({ label, fn, desc, red }) => (
                   <button
                     key={label}
-                    onMouseDown={e => { e.stopPropagation(); setMaintOpen(false); fn(); }}
+                    onClick={() => { setMaintOpen(false); fn(); }}
                     className={`w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors ${red ? 'text-red-500' : 'text-slate-700'}`}
                   >
                     <span className="block font-medium leading-tight">{label}</span>
