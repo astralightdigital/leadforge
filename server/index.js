@@ -905,13 +905,47 @@ app.get('/api/fetch-email', async (req, res) => {
     } catch {}
   }
 
-  // Priority 2: Scrape website pages + Facebook in parallel
-  const candidates = [];
-  if (url) {
+  // Priority 2: Geoapify Place Details — richer contact info for geo- leads
+  let detailsWebsite = null;
+  const detailsSocials = {};
+  let detailsPhone = null;
+
+  if (fsqId && fsqId.startsWith('geo-') && process.env.GEOAPIFY_API_KEY) {
     try {
-      const origin = new URL(url).origin;
+      const placeId = fsqId.replace(/^geo-/, '');
+      const r = await axios.get('https://api.geoapify.com/v2/place-details', {
+        params: { id: placeId, features: 'contact,details', apiKey: process.env.GEOAPIFY_API_KEY },
+        timeout: 8000,
+      });
+      const c = r.data.features?.[0]?.properties?.contact || {};
+
+      // Direct email
+      if (c.email) {
+        const e = c.email.replace(/^mailto:/i, '').trim();
+        if (e.includes('@') && !EMAIL_BLACKLIST.some(d => e.toLowerCase().includes(d))) {
+          return res.json({ email: e, source: 'geoapify', socials: {}, phone: c.phone || null });
+        }
+      }
+      // Website for scraping
+      if (!url && c.website) detailsWebsite = sanitizeWebsite(c.website);
+      // Phone
+      if (c.phone) detailsPhone = c.phone;
+      // Socials
+      const socialPrefixes = { facebook: 'https://facebook.com/', instagram: 'https://instagram.com/', twitter: 'https://twitter.com/', linkedin: 'https://linkedin.com/company/' };
+      Object.entries(socialPrefixes).forEach(([k, prefix]) => {
+        if (c[k]) detailsSocials[k] = c[k].startsWith('http') ? c[k] : `${prefix}${c[k]}`;
+      });
+    } catch {}
+  }
+
+  // Priority 3: Scrape website pages + Facebook in parallel
+  const effectiveUrl = url || detailsWebsite;
+  const candidates = [];
+  if (effectiveUrl) {
+    try {
+      const origin = new URL(effectiveUrl).origin;
       candidates.push(
-        url,
+        effectiveUrl,
         `${origin}/contact`, `${origin}/contact-us`, `${origin}/contactus`,
         `${origin}/about`,   `${origin}/about-us`,
         `${origin}/reach-us`,`${origin}/get-in-touch`,
@@ -919,13 +953,13 @@ app.get('/api/fetch-email', async (req, res) => {
         `${origin}/location`,`${origin}/locations`,
         `${origin}/find-us`, `${origin}/info`,
       );
-    } catch { candidates.push(url); }
+    } catch { candidates.push(effectiveUrl); }
   }
   if (facebook) candidates.push(facebook);
 
   // If the URL is a link-in-bio service (Linktree, Beacons, etc.), fetch it and
   // collect all external links — these are the business's actual profiles + real site
-  if (url && isLinkInBio(url)) {
+  if (effectiveUrl && isLinkInBio(effectiveUrl)) {
     try {
       const bioHtml = await fetchHtml(url).catch(() => '');
       const bioLinks = [];
@@ -950,9 +984,9 @@ app.get('/api/fetch-email', async (req, res) => {
   }
 
   // Try sitemap.xml to find real contact page URLs
-  if (url) {
+  if (effectiveUrl) {
     try {
-      const origin = new URL(url).origin;
+      const origin = new URL(effectiveUrl).origin;
       const sitemap = await fetchHtml(`${origin}/sitemap.xml`).catch(() => '');
       const contactUrls = (sitemap.match(/<loc>([^<]*(?:contact|about|team|reach)[^<]*)<\/loc>/gi) || [])
         .map(l => l.replace(/<\/?loc>/gi, '').trim())
@@ -966,8 +1000,8 @@ app.get('/api/fetch-email', async (req, res) => {
 
   // Extract email + socials + phone from all pages
   let foundEmail = null;
-  const foundSocials = {};
-  let foundPhone = null;
+  const foundSocials = { ...detailsSocials }; // seed with Place Details socials
+  let foundPhone = detailsPhone || null;      // seed with Place Details phone
 
   for (const html of allHtml) {
     if (!foundEmail) { const e = extractEmail(html); if (e) foundEmail = e; }
@@ -979,9 +1013,9 @@ app.get('/api/fetch-email', async (req, res) => {
   if (foundEmail) return res.json({ email: foundEmail, socials: foundSocials, phone: foundPhone });
 
   // Last resort: guess common prefixes on the domain and verify with MX lookup
-  if (url) {
+  if (effectiveUrl) {
     try {
-      const { hostname } = new URL(url);
+      const { hostname } = new URL(effectiveUrl);
       const domain = hostname.replace(/^www\./, '');
       // Skip free-builder domains — guessing emails there is meaningless
       const skipDomains = ['wix.com','squarespace.com','godaddy.com','weebly.com','business.site','sites.google.com','bizhub.com'];
