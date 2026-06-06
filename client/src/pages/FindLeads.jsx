@@ -22,7 +22,10 @@ const QUALITY_ORDER = { none: 0, weak: 1, has: 2 };
 
 const COMMON_BUSINESS_TYPES = [
   'nail salon', 'hair salon', 'barber shop', 'beauty salon', 'eyelash extensions',
-  'restaurant', 'pizza', 'cafe', 'coffee shop', 'bakery', 'sushi', 'taco shop',
+  'restaurant', 'asian restaurant', 'chinese restaurant', 'japanese restaurant',
+  'korean restaurant', 'vietnamese restaurant', 'thai restaurant', 'filipino restaurant',
+  'sushi restaurant', 'ramen restaurant',
+  'pizza', 'cafe', 'coffee shop', 'bakery', 'taco shop',
   'bar', 'pub', 'fast food', 'food truck',
   'gym', 'fitness center', 'yoga studio', 'pilates', 'crossfit',
   'auto repair', 'car wash', 'oil change', 'mechanic', 'tire shop',
