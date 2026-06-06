@@ -684,17 +684,19 @@ function LeadCard({ lead, added, onAdd }) {
         </div>
       </div>
 
-      <button
-        onClick={handleAdd}
-        disabled={added}
-        className={`mt-3 w-full sm:w-auto sm:float-right py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-          added
-            ? 'bg-teal-500 text-white cursor-default'
-            : 'bg-slate-800 hover:bg-slate-700 active:scale-95 text-white'
-        } ${popping ? 'animate-pop' : ''}`}
-      >
-        {added ? '✓ Added' : 'Add to Pipeline'}
-      </button>
+      <div className="flex justify-end mt-3">
+        <button
+          onClick={handleAdd}
+          disabled={added}
+          className={`py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+            added
+              ? 'bg-teal-500 text-white cursor-default'
+              : 'bg-slate-800 hover:bg-slate-700 active:scale-95 text-white'
+          } ${popping ? 'animate-pop' : ''}`}
+        >
+          {added ? '✓ Added' : 'Add to Pipeline'}
+        </button>
+      </div>
     </div>
   );
 }
