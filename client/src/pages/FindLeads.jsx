@@ -304,13 +304,15 @@ export default function FindLeads() {
           if (data.socials) Object.entries(data.socials).forEach(([k, v]) => { if (v) socialUpdate[k] = v; });
           const hasSocial = Object.keys(socialUpdate).length > 0;
           const hasPhone  = data.phone && !lead.phone;
-          if (hasSocial || hasPhone) {
+          const hasEmail  = data.email && !lead.discoveredEmail;
+          if (hasSocial || hasPhone || hasEmail) {
             setResults(prev => prev.map(r => {
               if (r.fsqId !== lead.fsqId) return r;
               return {
                 ...r,
-                socialMedia: hasSocial ? { ...r.socialMedia, ...socialUpdate } : r.socialMedia,
-                phone: hasPhone ? data.phone : r.phone,
+                socialMedia:     hasSocial ? { ...r.socialMedia, ...socialUpdate } : r.socialMedia,
+                phone:           hasPhone  ? data.phone  : r.phone,
+                discoveredEmail: hasEmail  ? data.email  : r.discoveredEmail,
               };
             }));
           }
