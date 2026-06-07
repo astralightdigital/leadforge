@@ -976,8 +976,69 @@ async function searchSocialMedia(name, city) {
       }
     }
     if (socials.facebook || socials.instagram)
-      console.log(`[social-search] "${name}" ${location}: fb=${socials.facebook} ig=${socials.instagram}`);
+      console.log(`[social-search] DDG "${name}" ${location}: fb=${socials.facebook} ig=${socials.instagram}`);
   } catch (e) { console.error('[social-search] DDG:', e.message); }
+
+  // Yelp scraping — listings often have FB/IG links in the business info section
+  if (!socials.facebook && !socials.instagram) {
+    try {
+      const yelpQ = encodeURIComponent(`${name} ${location}`);
+      const searchHtml = await fetchHtml(`https://www.yelp.com/search?find_desc=${yelpQ}&find_loc=${encodeURIComponent(location)}`);
+      const bizPath = searchHtml.match(/href="(\/biz\/[^"?#]+)"/)?.[1];
+      if (bizPath) {
+        const bizHtml = await fetchHtml(`https://www.yelp.com${bizPath}`);
+        const { socials: yelpSocials } = extractSocials(bizHtml);
+        Object.entries(yelpSocials).forEach(([k, v]) => { if (v && !socials[k]) socials[k] = v; });
+        if (socials.facebook || socials.instagram)
+          console.log(`[social-search] Yelp "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
+      }
+    } catch (e) { console.error('[social-search] Yelp:', e.message); }
+  }
+
+  // Yellow Pages scraping — another directory with social links
+  if (!socials.facebook && !socials.instagram) {
+    try {
+      const ypQ  = encodeURIComponent(name);
+      const ypLoc = encodeURIComponent(location);
+      const ypHtml = await fetchHtml(`https://www.yellowpages.com/search?search_terms=${ypQ}&geo_location_terms=${ypLoc}`);
+      const ypPath = ypHtml.match(/href="(\/[^"?#]*?\/bp\/[^"?#]+)"/)?.[1];
+      if (ypPath) {
+        const ypBiz = await fetchHtml(`https://www.yellowpages.com${ypPath}`);
+        const { socials: ypSocials } = extractSocials(ypBiz);
+        Object.entries(ypSocials).forEach(([k, v]) => { if (v && !socials[k]) socials[k] = v; });
+        if (socials.facebook || socials.instagram)
+          console.log(`[social-search] YP "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
+      }
+    } catch (e) { console.error('[social-search] YP:', e.message); }
+  }
+
+  // Broader DDG fallback — no quotes, catches name variations
+  if (!socials.facebook && !socials.instagram) {
+    try {
+      const urls = await ddgSearch(`${name} ${location} site:facebook.com`);
+      for (const u of urls) {
+        if (!u.includes('facebook.com')) continue;
+        const slug = u.split('facebook.com/')[1]?.split(/[/?#]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) {
+          socials.facebook = `https://facebook.com/${slug}`;
+          break;
+        }
+      }
+      if (!socials.instagram) {
+        const urls2 = await ddgSearch(`${name} ${location} site:instagram.com`);
+        for (const u of urls2) {
+          if (!u.includes('instagram.com')) continue;
+          const slug = u.split('instagram.com/')[1]?.split(/[/?#]/)[0];
+          if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) {
+            socials.instagram = `https://instagram.com/${slug}`;
+            break;
+          }
+        }
+      }
+      if (socials.facebook || socials.instagram)
+        console.log(`[social-search] DDG broad "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
+    } catch (e) { console.error('[social-search] DDG broad:', e.message); }
+  }
 
   return socials;
 }
