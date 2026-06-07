@@ -914,7 +914,8 @@ const SOCIAL_SEARCH_SKIP_IG = new Set(['p','explore','reel','tv','stories','reel
 
 async function searchSocialMedia(name, city, phone) {
   const socials = {};
-  if (!name) return socials;
+  let foundEmail = null;
+  if (!name) return { socials, email: null };
   const location = city ? city.split(',')[0].trim() : '';
 
   // Bing Web Search API (free 1000/mo on Azure F1)
@@ -939,7 +940,7 @@ async function searchSocialMedia(name, city, phone) {
         }
         if (socials.facebook && socials.instagram) break;
       }
-      return socials;
+      return { socials, email: null };
     } catch (e) { console.error('[social-search] Bing API:', e.message); }
   }
 
@@ -1042,7 +1043,7 @@ async function searchSocialMedia(name, city, phone) {
       console.log(`[social-search] DDG "${name}" ${location}: fb=${socials.facebook} ig=${socials.instagram}`);
   } catch (e) { console.error('[social-search] DDG:', e.message); }
 
-  // Yelp scraping — listings often have FB/IG links in the business info section
+  // Yelp scraping — extract socials AND email from listing
   if (!socials.facebook && !socials.instagram) {
     try {
       const yelpQ = encodeURIComponent(`${name} ${location}`);
@@ -1052,13 +1053,14 @@ async function searchSocialMedia(name, city, phone) {
         const bizHtml = await fetchHtml(`https://www.yelp.com${bizPath}`);
         const { socials: yelpSocials } = extractSocials(bizHtml);
         Object.entries(yelpSocials).forEach(([k, v]) => { if (v && !socials[k]) socials[k] = v; });
-        if (socials.facebook || socials.instagram)
-          console.log(`[social-search] Yelp "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
+        if (!foundEmail) foundEmail = extractEmail(bizHtml);
+        if (socials.facebook || socials.instagram || foundEmail)
+          console.log(`[social-search] Yelp "${name}": fb=${socials.facebook} ig=${socials.instagram} email=${foundEmail}`);
       }
     } catch (e) { console.error('[social-search] Yelp:', e.message); }
   }
 
-  // Yellow Pages scraping — another directory with social links
+  // Yellow Pages — extract socials AND email
   if (!socials.facebook && !socials.instagram) {
     try {
       const ypQ  = encodeURIComponent(name);
@@ -1069,8 +1071,9 @@ async function searchSocialMedia(name, city, phone) {
         const ypBiz = await fetchHtml(`https://www.yellowpages.com${ypPath}`);
         const { socials: ypSocials } = extractSocials(ypBiz);
         Object.entries(ypSocials).forEach(([k, v]) => { if (v && !socials[k]) socials[k] = v; });
-        if (socials.facebook || socials.instagram)
-          console.log(`[social-search] YP "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
+        if (!foundEmail) foundEmail = extractEmail(ypBiz);
+        if (socials.facebook || socials.instagram || foundEmail)
+          console.log(`[social-search] YP "${name}": fb=${socials.facebook} ig=${socials.instagram} email=${foundEmail}`);
       }
     } catch (e) { console.error('[social-search] YP:', e.message); }
   }
@@ -1082,20 +1085,14 @@ async function searchSocialMedia(name, city, phone) {
       for (const u of urls) {
         if (!u.includes('facebook.com')) continue;
         const slug = u.split('facebook.com/')[1]?.split(/[/?#]/)[0];
-        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) {
-          socials.facebook = `https://facebook.com/${slug}`;
-          break;
-        }
+        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) { socials.facebook = `https://facebook.com/${slug}`; break; }
       }
       if (!socials.instagram) {
         const urls2 = await ddgSearch(`${name} ${location} site:instagram.com`);
         for (const u of urls2) {
           if (!u.includes('instagram.com')) continue;
           const slug = u.split('instagram.com/')[1]?.split(/[/?#]/)[0];
-          if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) {
-            socials.instagram = `https://instagram.com/${slug}`;
-            break;
-          }
+          if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) { socials.instagram = `https://instagram.com/${slug}`; break; }
         }
       }
       if (socials.facebook || socials.instagram)
@@ -1103,7 +1100,7 @@ async function searchSocialMedia(name, city, phone) {
     } catch (e) { console.error('[social-search] DDG broad:', e.message); }
   }
 
-  return socials;
+  return { socials, email: foundEmail };
 }
 
 async function fetchHtml(pageUrl) {
@@ -1250,8 +1247,9 @@ app.get('/api/fetch-email', async (req, res) => {
 
   // Web search for Facebook/Instagram when website scraping found nothing
   if (name && !foundSocials.facebook && !foundSocials.instagram) {
-    const searched = await searchSocialMedia(name, city, phone || detailsPhone);
+    const { socials: searched, email: searchedEmail } = await searchSocialMedia(name, city, phone || detailsPhone);
     Object.entries(searched).forEach(([k, v]) => { if (v && !foundSocials[k]) foundSocials[k] = v; });
+    if (searchedEmail && !foundEmail) foundEmail = searchedEmail;
   }
 
   if (foundEmail) return res.json({ email: foundEmail, socials: foundSocials, phone: foundPhone });
