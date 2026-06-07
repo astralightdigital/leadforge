@@ -710,6 +710,11 @@ function LeadCard({ lead, added, onAdd }) {
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
             {lead.phone && <span>{lead.phone}</span>}
+            {lead.discoveredEmail && (
+              <a href={`mailto:${lead.discoveredEmail}`} className="text-emerald-600 hover:underline">
+                {lead.discoveredEmail}
+              </a>
+            )}
             {lead.websiteUrl ? (
               <a href={lead.websiteUrl} target="_blank" rel="noreferrer"
                 className="text-blue-600 hover:underline truncate max-w-xs">
