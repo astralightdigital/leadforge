@@ -912,7 +912,7 @@ function extractSocials(html) {
 const SOCIAL_SEARCH_SKIP_FB = new Set(['search','sharer','dialog','share','login','help','legal','about','privacy','groups','events','marketplace','watch','hashtag','stories','notifications','settings','find-friends','people','ad']);
 const SOCIAL_SEARCH_SKIP_IG = new Set(['p','explore','reel','tv','stories','reels','accounts','help','direct','_explore','hashtag']);
 
-async function searchSocialMedia(name, city, phone) {
+async function searchSocialMedia(name, city, phone, email) {
   const socials = {};
   let foundEmail = null;
   if (!name) return { socials, email: null };
@@ -976,6 +976,30 @@ async function searchSocialMedia(name, city, phone) {
         }
       }
     } catch (e) { console.error('[social-search] phone-bing:', e.message); }
+  }
+
+  // Email-based search — businesses often register FB/IG with same email
+  if (email && (!socials.facebook || !socials.instagram)) {
+    try {
+      const bingFb = await fetchHtml(`https://www.bing.com/search?q=${encodeURIComponent(`"${email}" site:facebook.com`)}&count=5`);
+      const fbDataUrls = [...bingFb.matchAll(/data-url="([^"]+)"/g)].map(m => m[1]);
+      const fbCiteUrls = [...bingFb.matchAll(/facebook\.com\/([a-zA-Z0-9._-]+)/g)].map(m => `https://facebook.com/${m[1]}`);
+      for (const u of [...fbDataUrls, ...fbCiteUrls]) {
+        if (!u.includes('facebook.com') || socials.facebook) continue;
+        const slug = u.split('facebook.com/')[1]?.split(/[/?#]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) { socials.facebook = `https://facebook.com/${slug}`; break; }
+      }
+      const bingIg = await fetchHtml(`https://www.bing.com/search?q=${encodeURIComponent(`"${email}" site:instagram.com`)}&count=5`);
+      const igDataUrls = [...bingIg.matchAll(/data-url="([^"]+)"/g)].map(m => m[1]);
+      const igCiteUrls = [...bingIg.matchAll(/instagram\.com\/([a-zA-Z0-9._]+)/g)].map(m => `https://instagram.com/${m[1]}`);
+      for (const u of [...igDataUrls, ...igCiteUrls]) {
+        if (!u.includes('instagram.com') || socials.instagram) continue;
+        const slug = u.split('instagram.com/')[1]?.split(/[/?#]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) { socials.instagram = `https://instagram.com/${slug}`; break; }
+      }
+      if (socials.facebook || socials.instagram)
+        console.log(`[social-search] email-bing "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
+    } catch (e) { console.error('[social-search] email-bing:', e.message); }
   }
 
   // Bing HTML name search — data-url attrs contain real destination URLs
@@ -1247,7 +1271,7 @@ app.get('/api/fetch-email', async (req, res) => {
 
   // Web search for Facebook/Instagram when website scraping found nothing
   if (name && !foundSocials.facebook && !foundSocials.instagram) {
-    const { socials: searched, email: searchedEmail } = await searchSocialMedia(name, city, phone || detailsPhone);
+    const { socials: searched, email: searchedEmail } = await searchSocialMedia(name, city, phone || detailsPhone, foundEmail);
     Object.entries(searched).forEach(([k, v]) => { if (v && !foundSocials[k]) foundSocials[k] = v; });
     if (searchedEmail && !foundEmail) foundEmail = searchedEmail;
   }
