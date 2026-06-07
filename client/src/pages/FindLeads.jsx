@@ -298,6 +298,7 @@ export default function FindLeads() {
           if (lead.businessName) q.set('name',   lead.businessName);
           if (lead.city)         q.set('city',   lead.city);
           if (lead.websiteUrl)   q.set('url',    lead.websiteUrl);
+          if (lead.phone)        q.set('phone',  lead.phone);
           if (lead.fsqId && !lead.fsqId.startsWith('osm-') && !lead.fsqId.startsWith('here:')) q.set('fsqId', lead.fsqId);
           const data = await fetch(api(`/api/fetch-email?${q}`)).then(r => r.json());
           const socialUpdate = {};

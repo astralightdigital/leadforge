@@ -912,7 +912,7 @@ function extractSocials(html) {
 const SOCIAL_SEARCH_SKIP_FB = new Set(['search','sharer','dialog','share','login','help','legal','about','privacy','groups','events','marketplace','watch','hashtag','stories','notifications','settings','find-friends','people','ad']);
 const SOCIAL_SEARCH_SKIP_IG = new Set(['p','explore','reel','tv','stories','reels','accounts','help','direct','_explore','hashtag']);
 
-async function searchSocialMedia(name, city) {
+async function searchSocialMedia(name, city, phone) {
   const socials = {};
   if (!name) return socials;
   const location = city ? city.split(',')[0].trim() : '';
@@ -941,6 +941,69 @@ async function searchSocialMedia(name, city) {
       }
       return socials;
     } catch (e) { console.error('[social-search] Bing API:', e.message); }
+  }
+
+  // Phone number search — most specific signal, finds exact page
+  if (phone && (!socials.facebook || !socials.instagram)) {
+    try {
+      const digits = phone.replace(/\D/g, '');
+      const formatted = phone.trim();
+      const bingHtml = await fetchHtml(`https://www.bing.com/search?q=${encodeURIComponent(`"${formatted}" site:facebook.com`)}&count=5`);
+      const dataUrls = [...bingHtml.matchAll(/data-url="([^"]+)"/g)].map(m => m[1]);
+      const citeUrls = [...bingHtml.matchAll(/facebook\.com\/([a-zA-Z0-9._-]+)/g)].map(m => `https://facebook.com/${m[1]}`);
+      for (const u of [...dataUrls, ...citeUrls]) {
+        if (!u.includes('facebook.com')) continue;
+        const slug = u.split('facebook.com/')[1]?.split(/[/?#]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) {
+          socials.facebook = `https://facebook.com/${slug}`;
+          console.log(`[social-search] phone-fb "${name}": ${socials.facebook}`);
+          break;
+        }
+      }
+      if (!socials.instagram) {
+        const igHtml = await fetchHtml(`https://www.bing.com/search?q=${encodeURIComponent(`"${formatted}" site:instagram.com`)}&count=5`);
+        const igDataUrls = [...igHtml.matchAll(/data-url="([^"]+)"/g)].map(m => m[1]);
+        const igCiteUrls = [...igHtml.matchAll(/instagram\.com\/([a-zA-Z0-9._]+)/g)].map(m => `https://instagram.com/${m[1]}`);
+        for (const u of [...igDataUrls, ...igCiteUrls]) {
+          if (!u.includes('instagram.com')) continue;
+          const slug = u.split('instagram.com/')[1]?.split(/[/?#]/)[0];
+          if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) {
+            socials.instagram = `https://instagram.com/${slug}`;
+            console.log(`[social-search] phone-ig "${name}": ${socials.instagram}`);
+            break;
+          }
+        }
+      }
+    } catch (e) { console.error('[social-search] phone-bing:', e.message); }
+  }
+
+  // Bing HTML name search — data-url attrs contain real destination URLs
+  if (!socials.facebook || !socials.instagram) {
+    try {
+      const bingHtml = await fetchHtml(`https://www.bing.com/search?q=${encodeURIComponent(`"${name}" ${location} site:facebook.com`)}&count=5`);
+      const dataUrls = [...bingHtml.matchAll(/data-url="([^"]+)"/g)].map(m => m[1]);
+      const citeUrls = [...bingHtml.matchAll(/facebook\.com\/([a-zA-Z0-9._-]+)/g)].map(m => `https://facebook.com/${m[1]}`);
+      for (const u of [...dataUrls, ...citeUrls]) {
+        if (!u.includes('facebook.com')) continue;
+        const slug = u.split('facebook.com/')[1]?.split(/[/?#]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase()) && !socials.facebook) {
+          socials.facebook = `https://facebook.com/${slug}`;
+          break;
+        }
+      }
+      if (!socials.instagram) {
+        const igHtml = await fetchHtml(`https://www.bing.com/search?q=${encodeURIComponent(`"${name}" ${location} site:instagram.com`)}&count=5`);
+        const igDataUrls = [...igHtml.matchAll(/data-url="([^"]+)"/g)].map(m => m[1]);
+        const igCiteUrls = [...igHtml.matchAll(/instagram\.com\/([a-zA-Z0-9._]+)/g)].map(m => `https://instagram.com/${m[1]}`);
+        for (const u of [...igDataUrls, ...igCiteUrls]) {
+          if (!u.includes('instagram.com')) continue;
+          const slug = u.split('instagram.com/')[1]?.split(/[/?#]/)[0];
+          if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) { socials.instagram = `https://instagram.com/${slug}`; break; }
+        }
+      }
+      if (socials.facebook || socials.instagram)
+        console.log(`[social-search] Bing "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
+    } catch (e) { console.error('[social-search] Bing HTML:', e.message); }
   }
 
   // DuckDuckGo HTML — run separate site: searches for FB and IG
@@ -1057,7 +1120,7 @@ async function fetchHtml(pageUrl) {
 }
 
 app.get('/api/fetch-email', async (req, res) => {
-  const { url, facebook, fsqId, name, city } = req.query;
+  const { url, facebook, fsqId, name, city, phone } = req.query;
   if (!url && !facebook && !fsqId && !name) return res.json({ email: null });
 
   // Priority 1: FSQ place data (structured, authoritative)
@@ -1187,7 +1250,7 @@ app.get('/api/fetch-email', async (req, res) => {
 
   // Web search for Facebook/Instagram when website scraping found nothing
   if (name && !foundSocials.facebook && !foundSocials.instagram) {
-    const searched = await searchSocialMedia(name, city);
+    const searched = await searchSocialMedia(name, city, phone || detailsPhone);
     Object.entries(searched).forEach(([k, v]) => { if (v && !foundSocials[k]) foundSocials[k] = v; });
   }
 
