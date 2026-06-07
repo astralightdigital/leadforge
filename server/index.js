@@ -943,30 +943,41 @@ async function searchSocialMedia(name, city) {
     } catch (e) { console.error('[social-search] Bing API:', e.message); }
   }
 
-  // Fallback: DuckDuckGo HTML — decode uddg= redirect params which contain the real destination URL
+  // DuckDuckGo HTML — run separate site: searches for FB and IG
+  const ddgSearch = async (query) => {
+    const html = await fetchHtml(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`);
+    const matches = html.match(/uddg=([^&"'\s]+)/g) || [];
+    return matches.map(m => { try { return decodeURIComponent(m.replace('uddg=', '')); } catch { return ''; } });
+  };
+
   try {
-    const q = encodeURIComponent(`"${name}" ${location} facebook instagram`);
-    const html = await fetchHtml(`https://html.duckduckgo.com/html/?q=${q}`);
-    const uddgMatches = html.match(/uddg=([^&"'\s]+)/g) || [];
-    for (const m of uddgMatches) {
-      try {
-        const decoded = decodeURIComponent(m.replace('uddg=', ''));
-        if (!socials.facebook && decoded.includes('facebook.com')) {
-          const slug = decoded.split('facebook.com/')[1]?.split(/[/?#]/)[0];
-          if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase()))
-            socials.facebook = `https://facebook.com/${slug}`;
+    // Facebook-specific search first
+    if (!socials.facebook) {
+      const urls = await ddgSearch(`"${name}" ${location} site:facebook.com`);
+      for (const u of urls) {
+        if (!u.includes('facebook.com')) continue;
+        const slug = u.split('facebook.com/')[1]?.split(/[/?#]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_FB.has(slug.toLowerCase())) {
+          socials.facebook = `https://facebook.com/${slug}`;
+          break;
         }
-        if (!socials.instagram && decoded.includes('instagram.com')) {
-          const slug = decoded.split('instagram.com/')[1]?.split(/[/?#]/)[0];
-          if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase()))
-            socials.instagram = `https://instagram.com/${slug}`;
+      }
+    }
+    // Instagram-specific search
+    if (!socials.instagram) {
+      const urls = await ddgSearch(`"${name}" ${location} site:instagram.com`);
+      for (const u of urls) {
+        if (!u.includes('instagram.com')) continue;
+        const slug = u.split('instagram.com/')[1]?.split(/[/?#]/)[0];
+        if (slug && !SOCIAL_SEARCH_SKIP_IG.has(slug.toLowerCase())) {
+          socials.instagram = `https://instagram.com/${slug}`;
+          break;
         }
-        if (socials.facebook && socials.instagram) break;
-      } catch {}
+      }
     }
     if (socials.facebook || socials.instagram)
-      console.log(`[social-search] found for "${name}": fb=${socials.facebook} ig=${socials.instagram}`);
-  } catch (e) { console.error('[social-search] DDG scrape:', e.message); }
+      console.log(`[social-search] "${name}" ${location}: fb=${socials.facebook} ig=${socials.instagram}`);
+  } catch (e) { console.error('[social-search] DDG:', e.message); }
 
   return socials;
 }
